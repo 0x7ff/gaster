@@ -664,7 +664,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			io_buffer_addr = 0x18010D500;
 			boot_tramp_start = 0x1800E0000;
 			gUSBSerialNumber = 0x180087958;
-			dfu_handle_request = 0x1800878C0;
+			dfu_handle_request = 0x1800878F8;
 			usb_core_do_transfer = 0x10000EE78;
 			arch_task_tramp_addr = 0x10000D998;
 			insecure_memory_base = 0x180380000;
@@ -682,7 +682,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			io_buffer_addr = 0x18010D500;
 			boot_tramp_start = 0x1800E0000;
 			gUSBSerialNumber = 0x180087958;
-			dfu_handle_request = 0x1800878C0;
+			dfu_handle_request = 0x1800878F8;
 			usb_core_do_transfer = 0x10000EE78;
 			arch_task_tramp_addr = 0x10000D998;
 			insecure_memory_base = 0x180380000;
