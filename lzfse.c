@@ -70,8 +70,7 @@ typedef struct {
 typedef struct {
 	const uint8_t *src, *src_begin, *src_end;
 	uint8_t *dst, *dst_begin, *dst_end;
-	uint32_t end_of_stream;
-	uint32_t block_magic;
+	uint32_t end_of_stream, block_magic;
 	lzfse_compressed_block_decoder_state compressed_lzfse_block_state;
 	uncompressed_block_decoder_state uncompressed_block_state;
 	uint32_t pad;
@@ -80,7 +79,7 @@ typedef struct {
 	uint32_t magic, n_raw_bytes;
 	uint64_t packed_fields[3];
 	uint8_t freq[2 * (LZFSE_ENCODE_L_SYMBOLS + LZFSE_ENCODE_M_SYMBOLS + LZFSE_ENCODE_D_SYMBOLS + LZFSE_ENCODE_LITERAL_SYMBOLS)];
-} __attribute__((__packed__)) lzfse_compressed_block_header_v2;
+} lzfse_compressed_block_header_v2;
 typedef struct {
 	uint32_t magic, n_raw_bytes, n_payload_bytes, n_literals, n_matches, n_literal_payload_bytes, n_lmd_payload_bytes;
 	int32_t literal_bits;
@@ -248,7 +247,7 @@ lzfse_decode_v1_freq_value(uint32_t bits, uint32_t *nbits) {
 	const uint8_t lzfse_freq_nbits_table[] = {
 		2, 3, 2, 5, 2, 3, 2, 8, 2, 3, 2, 5, 2, 3, 2, 14, 2, 3, 2, 5, 2, 3, 2, 8, 2, 3, 2, 5, 2, 3, 2, 14
 	}, lzfse_freq_value_table[] = {
-		0, 2, 1, 4, 0, 3, 1, UINT8_MAX, 0, 2, 1, 5, 0, 3, 1, UINT8_MAX, 0, 2, 1, 6, 0, 3, 1, UINT8_MAX, 0, 2, 1, 7, 0, 3, 1, UINT8_MAX
+		0, 2, 1, 4, 0, 3, 1, 8, 0, 2, 1, 5, 0, 3, 1, 8, 0, 2, 1, 6, 0, 3, 1, 8, 0, 2, 1, 7, 0, 3, 1, 8
 	};
 	uint32_t b = bits & 31U, n = lzfse_freq_nbits_table[b];
 
@@ -271,49 +270,47 @@ get_field(uint64_t v, uint32_t offset, uint32_t nbits) {
 }
 
 static uint32_t
-lzfse_decode_v2_header_size(const lzfse_compressed_block_header_v2 *in) {
-	return get_field(in->packed_fields[2], 0, 32);
+lzfse_decode_v2_header_size(lzfse_compressed_block_header_v2 in) {
+	return get_field(in.packed_fields[2], 0, 32);
 }
 
 static bool
-lzfse_decode_v1(lzfse_compressed_block_header_v1 *out, const lzfse_compressed_block_header_v2 *in) {
-	uint32_t i, nbits, accum_nbits;
+lzfse_decode_v1(lzfse_compressed_block_header_v1 *out, const uint8_t *in, lzfse_compressed_block_header_v2 header_v2) {
+	uint32_t i, accum, nbits, accum_nbits;
 	const uint8_t *src, *src_end;
-	uint32_t accum;
 	uint16_t *dst;
 
 	memset(out, '\0', sizeof(*out));
 	out->magic = LZFSE_COMPRESSEDV1_BLOCK_MAGIC;
-	out->n_raw_bytes = in->n_raw_bytes;
-	out->n_literals = get_field(in->packed_fields[0], 0, 20);
-	out->n_literal_payload_bytes = get_field(in->packed_fields[0], 20, 20);
-	out->literal_bits = (int32_t)get_field(in->packed_fields[0], 60, 3) - 7;
-	out->literal_state[0] = (uint16_t)get_field(in->packed_fields[1], 0, 10);
-	out->literal_state[1] = (uint16_t)get_field(in->packed_fields[1], 10, 10);
-	out->literal_state[2] = (uint16_t)get_field(in->packed_fields[1], 20, 10);
-	out->literal_state[3] = (uint16_t)get_field(in->packed_fields[1], 30, 10);
-	out->n_matches = get_field(in->packed_fields[0], 40, 20);
-	out->n_lmd_payload_bytes = get_field(in->packed_fields[1], 40, 20);
-	out->lmd_bits = (int32_t)get_field(in->packed_fields[1], 60, 3) - 7;
-	out->l_state = (uint16_t)get_field(in->packed_fields[2], 32, 10);
-	out->m_state = (uint16_t)get_field(in->packed_fields[2], 42, 10);
-	out->d_state = (uint16_t)get_field(in->packed_fields[2], 52, 10);
+	out->n_raw_bytes = header_v2.n_raw_bytes;
+	out->n_literals = get_field(header_v2.packed_fields[0], 0, 20);
+	out->n_literal_payload_bytes = get_field(header_v2.packed_fields[0], 20, 20);
+	out->literal_bits = (int32_t)get_field(header_v2.packed_fields[0], 60, 3) - 7;
+	out->literal_state[0] = (uint16_t)get_field(header_v2.packed_fields[1], 0, 10);
+	out->literal_state[1] = (uint16_t)get_field(header_v2.packed_fields[1], 10, 10);
+	out->literal_state[2] = (uint16_t)get_field(header_v2.packed_fields[1], 20, 10);
+	out->literal_state[3] = (uint16_t)get_field(header_v2.packed_fields[1], 30, 10);
+	out->n_matches = get_field(header_v2.packed_fields[0], 40, 20);
+	out->n_lmd_payload_bytes = get_field(header_v2.packed_fields[1], 40, 20);
+	out->lmd_bits = (int32_t)get_field(header_v2.packed_fields[1], 60, 3) - 7;
+	out->l_state = (uint16_t)get_field(header_v2.packed_fields[2], 32, 10);
+	out->m_state = (uint16_t)get_field(header_v2.packed_fields[2], 42, 10);
+	out->d_state = (uint16_t)get_field(header_v2.packed_fields[2], 52, 10);
 	out->n_payload_bytes = out->n_literal_payload_bytes + out->n_lmd_payload_bytes;
-	dst = out->l_freq;
-	src = in->freq;
-	src_end = (const uint8_t *)in + get_field(in->packed_fields[2], 0, 32);
-	accum = 0;
-	accum_nbits = 0;
+	src = in + offsetof(lzfse_compressed_block_header_v2, freq);
+	src_end = in + lzfse_decode_v2_header_size(header_v2);
 	if(src_end == src) {
 		return true;
 	}
+	dst = out->l_freq;
+	accum = 0;
+	accum_nbits = 0;
 	for(i = 0; i < LZFSE_ENCODE_L_SYMBOLS + LZFSE_ENCODE_M_SYMBOLS + LZFSE_ENCODE_D_SYMBOLS + LZFSE_ENCODE_LITERAL_SYMBOLS; ++i) {
 		while(src < src_end && accum_nbits + 8 <= 32) {
 			accum |= (uint32_t)*src << accum_nbits;
 			accum_nbits += 8;
 			++src;
 		}
-		nbits = 0;
 		dst[i] = (uint16_t)lzfse_decode_v1_freq_value(accum, &nbits);
 		if(nbits > accum_nbits) {
 			return false;
@@ -329,7 +326,7 @@ lzfse_decode_v1(lzfse_compressed_block_header_v1 *out, const lzfse_compressed_bl
 
 static bool
 lzfse_decode_lmd(lzfse_decoder_state *s) {
-	int32_t i, new_d, L = s->compressed_lzfse_block_state.l_value, M = s->compressed_lzfse_block_state.m_value, D = s->compressed_lzfse_block_state.d_value, remaining_bytes = (int32_t)(s->dst_end - s->dst - 32);
+	int32_t i, new_d, L = s->compressed_lzfse_block_state.l_value, M = s->compressed_lzfse_block_state.m_value, D = s->compressed_lzfse_block_state.d_value, remaining_bytes = (int32_t)(s->dst_end - s->dst) - 32;
 	fse_state l_state = s->compressed_lzfse_block_state.l_state, m_state = s->compressed_lzfse_block_state.m_state, d_state = s->compressed_lzfse_block_state.d_state;
 	const uint8_t *src_start = s->src_begin, *src = s->src + s->compressed_lzfse_block_state.lmd_in_buf, *lit = s->compressed_lzfse_block_state.current_literal;
 	fse_in_stream in = s->compressed_lzfse_block_state.lmd_in_stream;
@@ -395,8 +392,8 @@ lzfse_decode_lmd(lzfse_decoder_state *s) {
 static bool
 lzfse_decode(lzfse_decoder_state *s) {
 	uint32_t i, magic, copy_size, src_space, dst_space;
-	const lzfse_compressed_block_header_v2 *header2;
-	lzfse_compressed_block_header_v1 header1;
+	lzfse_compressed_block_header_v2 header_v2;
+	lzfse_compressed_block_header_v1 header_v1;
 	const uint8_t *buf, *buf_start;
 	fse_state state[4];
 	size_t header_size;
@@ -431,39 +428,39 @@ lzfse_decode(lzfse_decoder_state *s) {
 						if(s->src + offsetof(lzfse_compressed_block_header_v2, freq) > s->src_end) {
 							return false;
 						}
-						header2 = (const lzfse_compressed_block_header_v2 *)s->src;
-						header_size = lzfse_decode_v2_header_size(header2);
-						if(s->src + header_size > s->src_end || !lzfse_decode_v1(&header1, header2)) {
+						memcpy(&header_v2, s->src, sizeof(header_v2));
+						header_size = lzfse_decode_v2_header_size(header_v2);
+						if(s->src + header_size > s->src_end || !lzfse_decode_v1(&header_v1, s->src, header_v2)) {
 							return false;
 						}
 					} else {
-						if(s->src + sizeof(header1) > s->src_end) {
+						if(s->src + sizeof(header_v1) > s->src_end) {
 							return false;
 						}
-						memcpy(&header1, s->src, sizeof(lzfse_compressed_block_header_v1));
-						header_size = sizeof(header1);
+						memcpy(&header_v1, s->src, sizeof(lzfse_compressed_block_header_v1));
+						header_size = sizeof(header_v1);
 					}
-					if(s->src + header_size + header1.n_literal_payload_bytes + header1.n_lmd_payload_bytes > s->src_end) {
+					if(s->src + header_size + header_v1.n_literal_payload_bytes + header_v1.n_lmd_payload_bytes > s->src_end) {
 						return false;
 					}
 					s->src += header_size;
-					s->compressed_lzfse_block_state.n_lmd_payload_bytes = header1.n_lmd_payload_bytes;
-					s->compressed_lzfse_block_state.n_matches = header1.n_matches;
-					fse_init_decoder_table(LZFSE_ENCODE_LITERAL_STATES, LZFSE_ENCODE_LITERAL_SYMBOLS, header1.literal_freq, s->compressed_lzfse_block_state.literal_decoder);
-					fse_init_value_decoder_table(LZFSE_ENCODE_L_STATES, LZFSE_ENCODE_L_SYMBOLS, header1.l_freq, l_extra_bits, l_base_value, s->compressed_lzfse_block_state.l_decoder);
-					fse_init_value_decoder_table(LZFSE_ENCODE_M_STATES, LZFSE_ENCODE_M_SYMBOLS, header1.m_freq, m_extra_bits, m_base_value, s->compressed_lzfse_block_state.m_decoder);
-					fse_init_value_decoder_table(LZFSE_ENCODE_D_STATES, LZFSE_ENCODE_D_SYMBOLS, header1.d_freq, d_extra_bits, d_base_value, s->compressed_lzfse_block_state.d_decoder);
+					s->compressed_lzfse_block_state.n_lmd_payload_bytes = header_v1.n_lmd_payload_bytes;
+					s->compressed_lzfse_block_state.n_matches = header_v1.n_matches;
+					fse_init_decoder_table(LZFSE_ENCODE_LITERAL_STATES, LZFSE_ENCODE_LITERAL_SYMBOLS, header_v1.literal_freq, s->compressed_lzfse_block_state.literal_decoder);
+					fse_init_value_decoder_table(LZFSE_ENCODE_L_STATES, LZFSE_ENCODE_L_SYMBOLS, header_v1.l_freq, l_extra_bits, l_base_value, s->compressed_lzfse_block_state.l_decoder);
+					fse_init_value_decoder_table(LZFSE_ENCODE_M_STATES, LZFSE_ENCODE_M_SYMBOLS, header_v1.m_freq, m_extra_bits, m_base_value, s->compressed_lzfse_block_state.m_decoder);
+					fse_init_value_decoder_table(LZFSE_ENCODE_D_STATES, LZFSE_ENCODE_D_SYMBOLS, header_v1.d_freq, d_extra_bits, d_base_value, s->compressed_lzfse_block_state.d_decoder);
 					buf_start = s->src_begin;
-					s->src += header1.n_literal_payload_bytes;
+					s->src += header_v1.n_literal_payload_bytes;
 					buf = s->src;
-					if(!fse_in_init(&in, header1.literal_bits, &buf, buf_start)) {
+					if(!fse_in_init(&in, header_v1.literal_bits, &buf, buf_start)) {
 						return false;
 					}
-					state[0] = header1.literal_state[0];
-					state[1] = header1.literal_state[1];
-					state[2] = header1.literal_state[2];
-					state[3] = header1.literal_state[3];
-					for(i = 0; i < header1.n_literals; i += 4) {
+					state[0] = header_v1.literal_state[0];
+					state[1] = header_v1.literal_state[1];
+					state[2] = header_v1.literal_state[2];
+					state[3] = header_v1.literal_state[3];
+					for(i = 0; i < header_v1.n_literals; i += 4) {
 						if(!fse_in_flush(&in, &buf, buf_start)) {
 							return false;
 						}
@@ -473,13 +470,13 @@ lzfse_decode(lzfse_decoder_state *s) {
 						s->compressed_lzfse_block_state.literals[i + 3] = fse_decode(&state[3], s->compressed_lzfse_block_state.literal_decoder, &in);
 					}
 					s->compressed_lzfse_block_state.current_literal = s->compressed_lzfse_block_state.literals;
-					buf = s->src + header1.n_lmd_payload_bytes;
-					if(!fse_in_init(&in, header1.lmd_bits, &buf, s->src)) {
+					buf = s->src + header_v1.n_lmd_payload_bytes;
+					if(!fse_in_init(&in, header_v1.lmd_bits, &buf, s->src)) {
 						return false;
 					}
-					s->compressed_lzfse_block_state.l_state = header1.l_state;
-					s->compressed_lzfse_block_state.m_state = header1.m_state;
-					s->compressed_lzfse_block_state.d_state = header1.d_state;
+					s->compressed_lzfse_block_state.l_state = header_v1.l_state;
+					s->compressed_lzfse_block_state.m_state = header_v1.m_state;
+					s->compressed_lzfse_block_state.d_state = header_v1.d_state;
 					s->compressed_lzfse_block_state.lmd_in_buf = (uint32_t)(buf - s->src);
 					s->compressed_lzfse_block_state.l_value = s->compressed_lzfse_block_state.m_value = 0;
 					s->compressed_lzfse_block_state.d_value = -1;
@@ -535,7 +532,7 @@ lzfse_decode_scratch_size(void) {
 
 static size_t
 lzfse_decode_buffer_with_scratch(uint8_t *dst_buffer, size_t dst_size, const uint8_t *src_buffer, size_t src_size, void *scratch_buffer) {
-	lzfse_decoder_state *s = (lzfse_decoder_state *)scratch_buffer;
+	lzfse_decoder_state *s = scratch_buffer;
 
 	memset(s, '\0', sizeof(*s));
 	s->src = src_buffer;
@@ -553,7 +550,7 @@ lzfse_decode_buffer(uint8_t *dst_buffer, size_t dst_size, const uint8_t *src_buf
 	size_t ret = 0;
 
 	if(scratch_buffer == NULL) {
-		scratch_buffer = malloc(lzfse_decode_scratch_size() + 1);
+		scratch_buffer = malloc(lzfse_decode_scratch_size());
 		has_malloc = true;
 	}
 	if(scratch_buffer == NULL) {
