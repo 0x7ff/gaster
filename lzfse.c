@@ -1,3 +1,17 @@
+/* Copyright 2022 0x7ff
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 #include "lzfse.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -10,7 +24,6 @@
 #define LZFSE_ENCODE_L_SYMBOLS (20)
 #define LZFSE_ENCODE_M_SYMBOLS (20)
 #define LZFSE_ENCODE_D_SYMBOLS (64)
-#define LZFSE_ENCODE_HASH_WIDTH (4)
 #define LZFSE_MATCHES_PER_BLOCK (10000)
 #define LZFSE_NO_BLOCK_MAGIC (0x00000000U)
 #define LZFSE_ENCODE_LITERAL_STATES (1024)
@@ -23,16 +36,10 @@
 #define LZFSE_LITERALS_PER_BLOCK (4 * LZFSE_MATCHES_PER_BLOCK)
 
 typedef uint16_t fse_state;
-typedef int32_t fse_bit_count;
 typedef struct {
-	int8_t k;
-	uint8_t symbol;
-	int16_t delta;
+	uint8_t k, symbol;
+	uint16_t delta;
 } fse_decoder_entry;
-typedef struct {
-	int64_t pos, ref;
-	uint32_t length;
-} lzfse_match;
 typedef struct {
 	uint32_t magic, n_raw_bytes;
 } uncompressed_block_header;
@@ -41,17 +48,13 @@ typedef struct {
 } uncompressed_block_decoder_state;
 typedef struct {
 	uint64_t accum;
-	fse_bit_count accum_nbits, pad;
+	uint32_t accum_nbits, pad;
 } fse_in_stream;
 typedef struct {
 	uint8_t total_bits, value_bits;
-	int16_t delta;
-	int32_t vbase;
+	uint16_t delta;
+	uint32_t vbase;
 } fse_value_decoder_entry;
-typedef struct {
-	int32_t pos[LZFSE_ENCODE_HASH_WIDTH];
-	uint32_t value[LZFSE_ENCODE_HASH_WIDTH];
-} lzfse_history_set;
 typedef struct {
 	uint32_t n_matches, n_lmd_payload_bytes;
 	const uint8_t *current_literal;
@@ -60,14 +63,14 @@ typedef struct {
 	uint32_t lmd_in_buf;
 	uint16_t l_state, m_state, d_state, pad_1;
 	fse_value_decoder_entry l_decoder[LZFSE_ENCODE_L_STATES], m_decoder[LZFSE_ENCODE_M_STATES], d_decoder[LZFSE_ENCODE_D_STATES];
-	int32_t literal_decoder[LZFSE_ENCODE_LITERAL_STATES];
+	uint32_t literal_decoder[LZFSE_ENCODE_LITERAL_STATES];
 	uint8_t literals[LZFSE_LITERALS_PER_BLOCK + 64];
 	uint32_t pad_2;
 } lzfse_compressed_block_decoder_state;
 typedef struct {
 	const uint8_t *src, *src_begin, *src_end;
 	uint8_t *dst, *dst_begin, *dst_end;
-	int32_t end_of_stream;
+	uint32_t end_of_stream;
 	uint32_t block_magic;
 	lzfse_compressed_block_decoder_state compressed_lzfse_block_state;
 	uncompressed_block_decoder_state uncompressed_block_state;
@@ -93,7 +96,7 @@ static const uint8_t l_extra_bits[LZFSE_ENCODE_L_SYMBOLS] = {
 }, d_extra_bits[LZFSE_ENCODE_D_SYMBOLS] = {
 	0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8, 9, 9, 9, 9, 10, 10, 10, 10, 11, 11, 11, 11, 12, 12, 12, 12, 13, 13, 13, 13, 14, 14, 14, 14, 15, 15, 15, 15
 };
-static const int32_t l_base_value[LZFSE_ENCODE_L_SYMBOLS] = {
+static const uint32_t l_base_value[LZFSE_ENCODE_L_SYMBOLS] = {
 	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 28, 60
 }, m_base_value[LZFSE_ENCODE_M_SYMBOLS] = {
 	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 24, 56, 312
@@ -102,35 +105,32 @@ static const int32_t l_base_value[LZFSE_ENCODE_L_SYMBOLS] = {
 };
 
 static uint64_t
-fse_mask_lsb(uint64_t x, fse_bit_count nbits) {
-	const uint64_t mtable[] = {
-		0x0000000000000000ULL, 0x0000000000000001ULL, 0x0000000000000003ULL, 0x0000000000000007ULL, 0x000000000000000FULL, 0x000000000000001FULL, 0x000000000000003FULL, 0x000000000000007FULL, 0x00000000000000FFULL, 0x00000000000001FFULL, 0x00000000000003FFULL, 0x00000000000007FFULL, 0x0000000000000FFFULL, 0x0000000000001FFFULL, 0x0000000000003FFFULL, 0x0000000000007FFFULL, 0x000000000000FFFFULL, 0x000000000001FFFFULL, 0x000000000003FFFFULL, 0x000000000007FFFFULL, 0x00000000000FFFFFULL, 0x00000000001FFFFFULL, 0x00000000003FFFFFULL, 0x00000000007FFFFFULL, 0x0000000000FFFFFFULL, 0x0000000001FFFFFFULL, 0x0000000003FFFFFFULL, 0x0000000007FFFFFFULL, 0x000000000FFFFFFFULL, 0x000000001FFFFFFFULL, 0x000000003FFFFFFFULL, 0x000000007FFFFFFFULL, 0x00000000FFFFFFFFULL, 0x00000001FFFFFFFFULL, 0x00000003FFFFFFFFULL, 0x00000007FFFFFFFFULL, 0x0000000FFFFFFFFFULL, 0x0000001FFFFFFFFFULL, 0x0000003FFFFFFFFFULL, 0x0000007FFFFFFFFFULL, 0x000000FFFFFFFFFFULL, 0x000001FFFFFFFFFFULL, 0x000003FFFFFFFFFFULL, 0x000007FFFFFFFFFFULL, 0x00000FFFFFFFFFFFULL, 0x00001FFFFFFFFFFFULL, 0x00003FFFFFFFFFFFULL, 0x00007FFFFFFFFFFFULL, 0x0000FFFFFFFFFFFFULL, 0x0001FFFFFFFFFFFFULL, 0x0003FFFFFFFFFFFFULL, 0x0007FFFFFFFFFFFFULL, 0x000FFFFFFFFFFFFFULL, 0x001FFFFFFFFFFFFFULL, 0x003FFFFFFFFFFFFFULL, 0x007FFFFFFFFFFFFFULL, 0x00FFFFFFFFFFFFFFULL, 0x01FFFFFFFFFFFFFFULL, 0x03FFFFFFFFFFFFFFULL, 0x07FFFFFFFFFFFFFFULL, 0x0FFFFFFFFFFFFFFFULL, 0x1FFFFFFFFFFFFFFFULL, 0x3FFFFFFFFFFFFFFFULL, 0x7FFFFFFFFFFFFFFFULL, 0xFFFFFFFFFFFFFFFFULL
-	};
-	return x & mtable[nbits];
+fse_mask_lsb(uint64_t x, uint32_t nbits) {
+	return x & ((1ULL << nbits) - 1U);
 }
 
 static uint64_t
-fse_extract_bits(uint64_t x, fse_bit_count start, fse_bit_count nbits) {
+fse_extract_bits(uint64_t x, uint32_t start, uint32_t nbits) {
 	return fse_mask_lsb(x >> start, nbits);
 }
 
 static bool
-fse_in_init(fse_in_stream *s, fse_bit_count n, const uint8_t **pbuf, const uint8_t *buf_start) {
+fse_in_init(fse_in_stream *s, int32_t n, const uint8_t **pbuf, const uint8_t *buf_start) {
 	if(n != 0) {
-		if(*pbuf < buf_start + 8) {
+		if(*pbuf < buf_start + sizeof(s->accum)) {
 			return false;
 		}
-		*pbuf -= 8;
-		memcpy(&s->accum, *pbuf, 8);
-		s->accum_nbits = n + 64;
+		*pbuf -= sizeof(s->accum);
+		memcpy(&s->accum, *pbuf, sizeof(s->accum));
+		s->accum_nbits = (uint32_t)(n + 64);
 	} else {
-		if(*pbuf < buf_start + 7) {
+		if(*pbuf < buf_start + sizeof(s->accum) - 1) {
 			return false;
 		}
-		*pbuf -= 7;
-		memcpy(&s->accum, *pbuf, 7);
-		s->accum &= 0xFFFFFFFFFFFFFFULL;
-		s->accum_nbits = n + 56;
+		*pbuf -= sizeof(s->accum) - 1;
+		memcpy(&s->accum, *pbuf, sizeof(s->accum) - 1);
+		s->accum &= (1ULL << 56U) - 1U;
+		s->accum_nbits = (uint32_t)(n + 56);
 	}
 	if(s->accum_nbits < 56 || s->accum_nbits >= 64 || (s->accum >> s->accum_nbits) != 0) {
 		return false;
@@ -140,7 +140,7 @@ fse_in_init(fse_in_stream *s, fse_bit_count n, const uint8_t **pbuf, const uint8
 
 static bool
 fse_in_flush(fse_in_stream *s, const uint8_t **pbuf, const uint8_t *buf_start) {
-	fse_bit_count nbits = (63 - s->accum_nbits) & -8;
+	uint32_t nbits = (63U - s->accum_nbits) & -sizeof(s->accum);
 	const uint8_t *buf = *pbuf - (nbits >> 3U);
 	uint64_t incoming;
 
@@ -158,7 +158,7 @@ fse_in_flush(fse_in_stream *s, const uint8_t **pbuf, const uint8_t *buf_start) {
 }
 
 static uint64_t
-fse_in_pull(fse_in_stream *s, fse_bit_count n) {
+fse_in_pull(fse_in_stream *s, uint32_t n) {
 	uint64_t result;
 
 	s->accum_nbits -= n;
@@ -168,10 +168,10 @@ fse_in_pull(fse_in_stream *s, fse_bit_count n) {
 }
 
 static uint8_t
-fse_decode(fse_state *pstate, const int32_t *decoder_table, fse_in_stream *in) {
-	fse_bit_count e = decoder_table[*pstate];
+fse_decode(fse_state *pstate, const uint32_t *decoder_table, fse_in_stream *in) {
+	uint32_t e = decoder_table[*pstate];
 
-	*pstate = (fse_state)(e >> 16U) + (fse_state)fse_in_pull(in, e & 0xFF);
+	*pstate = (fse_state)((e >> 16U) + fse_in_pull(in, e & 0xFFU));
 	return (uint8_t)fse_extract_bits((uint64_t)e, 8, 8);
 }
 
@@ -185,28 +185,28 @@ fse_value_decode(fse_state *pstate, const fse_value_decoder_entry *value_decoder
 }
 
 static bool
-fse_init_decoder_table(int32_t nstates, int32_t nsymbols, const uint16_t *freq, int32_t *t) {
-	int32_t f, i, j, k, j0, n_clz = __builtin_clz((uint32_t)nstates), sum_of_freq = 0;
+fse_init_decoder_table(uint32_t nstates, uint32_t nsymbols, const uint16_t *freq, uint32_t *t) {
+	uint32_t f, i, j, k, j0, n_clz = (uint32_t)__builtin_clz(nstates), sum_of_freq = 0;
 	fse_decoder_entry e;
 
 	for(i = 0; i < nsymbols; ++i) {
-		if((f = (int32_t)freq[i]) == 0) {
+		if((f = freq[i]) == 0) {
 			continue;
 		}
 		sum_of_freq += f;
 		if(sum_of_freq > nstates) {
 			return false;
 		}
-		k = __builtin_clz((uint32_t)f) - n_clz;
+		k = (uint32_t)__builtin_clz(f) - n_clz;
 		j0 = ((2 * nstates) >> k) - f;
 		for(j = 0; j < f; ++j) {
 			e.symbol = (uint8_t)i;
 			if(j < j0) {
-				e.k = (int8_t)k;
-				e.delta = (int16_t)(((f + j) << k) - nstates);
+				e.k = (uint8_t)k;
+				e.delta = (uint16_t)(((f + j) << k) - nstates);
 			} else {
-				e.k = (int8_t)(k - 1);
-				e.delta = (int16_t)((j - j0) << (k - 1));
+				e.k = (uint8_t)(k - 1);
+				e.delta = (uint16_t)((j - j0) << (k - 1));
 			}
 			memcpy(t, &e, sizeof(e));
 			++t;
@@ -216,15 +216,15 @@ fse_init_decoder_table(int32_t nstates, int32_t nsymbols, const uint16_t *freq, 
 }
 
 static void
-fse_init_value_decoder_table(int32_t nstates, int32_t nsymbols, const uint16_t *freq, const uint8_t *symbol_vbits, const int32_t *symbol_vbase, fse_value_decoder_entry *t) {
-	int32_t f, i, j, k, j0, n_clz = __builtin_clz((uint32_t)nstates);
+fse_init_value_decoder_table(uint32_t nstates, uint32_t nsymbols, const uint16_t *freq, const uint8_t *symbol_vbits, const uint32_t *symbol_vbase, fse_value_decoder_entry *t) {
+	uint32_t f, i, j, k, j0, n_clz = (uint32_t)__builtin_clz(nstates);
 	fse_value_decoder_entry e, ei;
 
 	for(i = 0; i < nsymbols; ++i) {
-		if((f = (int32_t)freq[i]) == 0) {
+		if((f = freq[i]) == 0) {
 			continue;
 		}
-		k = __builtin_clz((uint32_t)f) - n_clz;
+		k = (uint32_t)__builtin_clz(f) - n_clz;
 		j0 = ((2 * nstates) >> k) - f;
 		ei.value_bits = symbol_vbits[i];
 		ei.vbase = symbol_vbase[i];
@@ -232,10 +232,10 @@ fse_init_value_decoder_table(int32_t nstates, int32_t nsymbols, const uint16_t *
 			e = ei;
 			if(j < j0) {
 				e.total_bits = (uint8_t)k + e.value_bits;
-				e.delta = (int16_t)(((f + j) << k) - nstates);
+				e.delta = (uint16_t)(((f + j) << k) - nstates);
 			} else {
 				e.total_bits = (uint8_t)(k - 1) + e.value_bits;
-				e.delta = (int16_t)((j - j0) << (k - 1));
+				e.delta = (uint16_t)((j - j0) << (k - 1));
 			}
 			memcpy(t, &e, sizeof(e));
 			++t;
@@ -243,15 +243,14 @@ fse_init_value_decoder_table(int32_t nstates, int32_t nsymbols, const uint16_t *
 	}
 }
 
-static int32_t
-lzfse_decode_v1_freq_value(uint32_t bits, int32_t *nbits) {
-	const int8_t lzfse_freq_nbits_table[32] = {
+static uint32_t
+lzfse_decode_v1_freq_value(uint32_t bits, uint32_t *nbits) {
+	const uint8_t lzfse_freq_nbits_table[] = {
 		2, 3, 2, 5, 2, 3, 2, 8, 2, 3, 2, 5, 2, 3, 2, 14, 2, 3, 2, 5, 2, 3, 2, 8, 2, 3, 2, 5, 2, 3, 2, 14
-	}, lzfse_freq_value_table[32] = {
-		0, 2, 1, 4, 0, 3, 1, -1, 0, 2, 1, 5, 0, 3, 1, -1, 0, 2, 1, 6, 0, 3, 1, -1, 0, 2, 1, 7, 0, 3, 1, -1
+	}, lzfse_freq_value_table[] = {
+		0, 2, 1, 4, 0, 3, 1, UINT8_MAX, 0, 2, 1, 5, 0, 3, 1, UINT8_MAX, 0, 2, 1, 6, 0, 3, 1, UINT8_MAX, 0, 2, 1, 7, 0, 3, 1, UINT8_MAX
 	};
-	uint32_t b = bits & 31U;
-	int32_t n = lzfse_freq_nbits_table[b];
+	uint32_t b = bits & 31U, n = lzfse_freq_nbits_table[b];
 
 	*nbits = n;
 	if(n == 8) {
@@ -278,7 +277,7 @@ lzfse_decode_v2_header_size(const lzfse_compressed_block_header_v2 *in) {
 
 static bool
 lzfse_decode_v1(lzfse_compressed_block_header_v1 *out, const lzfse_compressed_block_header_v2 *in) {
-	int32_t i, nbits, accum_nbits;
+	uint32_t i, nbits, accum_nbits;
 	const uint8_t *src, *src_end;
 	uint32_t accum;
 	uint16_t *dst;
