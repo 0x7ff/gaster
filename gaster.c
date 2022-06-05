@@ -829,7 +829,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-3401.0.0.1.16]") != NULL) {
 			cpid = 0x8012;
 			config_hole = 6;
-			config_overwrite_pad = 0x580;
+			config_overwrite_pad = 0x540;
 			tlbi = 0x100000494;
 			nop_gadget = 0x100008DB8;
 			ret_gadget = 0x10000012C;
