@@ -86,7 +86,7 @@ typedef struct {
 	uint16_t literal_state[4];
 	int32_t lmd_bits;
 	uint16_t l_state, m_state, d_state, l_freq[LZFSE_ENCODE_L_SYMBOLS], m_freq[LZFSE_ENCODE_M_SYMBOLS], d_freq[LZFSE_ENCODE_D_SYMBOLS], literal_freq[LZFSE_ENCODE_LITERAL_SYMBOLS];
-} __attribute__((__packed__,__aligned__(2))) lzfse_compressed_block_header_v1;
+} __attribute__((__packed__, __aligned__(2))) lzfse_compressed_block_header_v1;
 
 static const uint8_t l_extra_bits[LZFSE_ENCODE_L_SYMBOLS] = {
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 5, 8
