@@ -18,7 +18,7 @@
 #	include <openssl/evp.h>
 #	include <stdbool.h>
 #	include <string.h>
-#   include <stddef.h>
+#	include <stddef.h>
 
 #else
 #	include <CommonCrypto/CommonCrypto.h>
