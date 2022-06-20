@@ -18,12 +18,15 @@
 #	include <openssl/evp.h>
 #	include <stdbool.h>
 #	include <string.h>
+#   include <stddef.h>
+
 #else
 #	include <CommonCrypto/CommonCrypto.h>
 #	include <CoreFoundation/CoreFoundation.h>
 #	include <IOKit/IOCFPlugIn.h>
 #	include <IOKit/usb/IOUSBLib.h>
 #endif
+
 
 #define DFU_DNLOAD (1)
 #define AES_CMD_DEC (1U)
