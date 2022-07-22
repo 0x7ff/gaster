@@ -1325,6 +1325,13 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 		} else if(!dfu_send_data(handle, payload, payload_sz, false)) {
 			return false;
 		}
+		int data = 6;
+		int *pdata = &data;
+		void *ret = NULL;
+		send_usb_control_request(handle, 0x21, 1, 0, 0, 0, 0, ret);
+		send_usb_control_request(handle, 0xA1, 3, 0, 0, (void *)pdata, 4, ret);
+		send_usb_control_request(handle, 0xA1, 3, 0, 0, (void *)pdata, 4, ret);
+		send_usb_control_request(handle, 0xA1, 3, 0, 0, (void *)pdata, 4, ret);
 		return true;
 	}
 	return false;
