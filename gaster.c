@@ -407,7 +407,7 @@ open_usb_device(io_service_t serv, usb_handle_t *handle) {
 	bool ret = false;
 
 	if(query_usb_interface(serv, kIOUSBDeviceUserClientTypeID, kIOUSBDeviceInterfaceID320, (LPVOID *)&handle->device)) {
-		if((*handle->device)->USBDeviceOpenSeize(handle->device) == kIOReturnSuccess) {
+		if((*handle->device)->USBDeviceOpen(handle->device) == kIOReturnSuccess) {
 			if((*handle->device)->GetConfigurationDescriptorPtr(handle->device, 0, &config) == kIOReturnSuccess && (*handle->device)->SetConfiguration(handle->device, config->bConfigurationValue) == kIOReturnSuccess && (*handle->device)->CreateDeviceAsyncEventSource(handle->device, &handle->async_event_source) == kIOReturnSuccess) {
 				CFRunLoopAddSource(CFRunLoopGetCurrent(), handle->async_event_source, kCFRunLoopDefaultMode);
 				handle->serv = serv;
@@ -903,7 +903,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			usb_serial_number_string_descriptor = 0x18000082A;
 		}
 		if(cpid != 0) {
-			*(bool *)pwned = strstr(usb_serial_num, " PWND:[gaster]") != NULL || strstr(usb_serial_num, " PWND:[checkm8]") != NULL;
+			*(bool *)pwned = strstr(usb_serial_num, pwnd_str) != NULL || strstr(usb_serial_num, " PWND:[checkm8]") != NULL;
 			ret = true;
 		}
 		free(usb_serial_num);

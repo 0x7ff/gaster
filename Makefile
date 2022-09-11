@@ -1,4 +1,4 @@
-.PHONY: macos libusb ios clean
+.PHONY: macos libusb ios payload clean
 
 CC ?= clang
 
@@ -14,6 +14,17 @@ ios:
 	ln -s $(shell xcrun -sdk macosx -show-sdk-path)/System/Library/Frameworks/IOKit.framework/Headers headers/IOKit
 	xcrun -sdk iphoneos clang -arch armv7 -arch arm64 -isystemheaders -mios-version-min=9.0 -Weverything gaster.c lzfse.c -o gaster -framework CoreFoundation -framework IOKit -Os
 	$(RM) -r headers
+
+payload:
+	as -arch arm64 payload_A9.S -o payload_A9.o
+	gobjcopy -O binary -j .text payload_A9.o payload_A9.bin
+	$(RM) payload_A9.o
+	as -arch arm64 payload_notA9.S -o payload_notA9.o
+	gobjcopy -O binary -j .text payload_notA9.o payload_notA9.bin
+	$(RM) payload_notA9.o
+	as -arch arm64 payload_handle_checkm8_request.S -o payload_handle_checkm8_request.o
+	gobjcopy -O binary -j .text payload_handle_checkm8_request.o payload_handle_checkm8_request.bin
+	$(RM) payload_handle_checkm8_request.o
 
 clean:
 	$(RM) gaster
