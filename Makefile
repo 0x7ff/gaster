@@ -3,16 +3,28 @@
 CC ?= clang
 
 macos:
+	xxd -iC payload_A9.bin payload_A9.h
+	xxd -iC payload_notA9.bin payload_notA9.h
+	xxd -iC payload_handle_checkm8_request.bin payload_handle_checkm8_request.h
 	xcrun -sdk macosx clang -mmacosx-version-min=10.9 -Weverything gaster.c lzfse.c -o gaster -framework CoreFoundation -framework IOKit -Os
+	$(RM) payload_A9.h payload_notA9.h payload_handle_checkm8_request.h
 
 libusb:
+	xxd -iC payload_A9.bin payload_A9.h
+	xxd -iC payload_notA9.bin payload_notA9.h
+	xxd -iC payload_handle_checkm8_request.bin payload_handle_checkm8_request.h
 	$(CC) -Wall -Wextra -Wpedantic -DHAVE_LIBUSB gaster.c lzfse.c -o gaster -lusb-1.0 -lcrypto -Os
+	$(RM) payload_A9.h payload_notA9.h payload_handle_checkm8_request.h
 
 ios:
 	mkdir headers
 	ln -s $(shell xcrun -sdk macosx -show-sdk-path)/usr/include/libkern headers
 	ln -s $(shell xcrun -sdk macosx -show-sdk-path)/System/Library/Frameworks/IOKit.framework/Headers headers/IOKit
+	xxd -iC payload_A9.bin payload_A9.h
+	xxd -iC payload_notA9.bin payload_notA9.h
+	xxd -iC payload_handle_checkm8_request.bin payload_handle_checkm8_request.h
 	xcrun -sdk iphoneos clang -arch armv7 -arch arm64 -isystemheaders -mios-version-min=9.0 -Weverything gaster.c lzfse.c -o gaster -framework CoreFoundation -framework IOKit -Os
+	$(RM) payload_A9.h payload_notA9.h payload_handle_checkm8_request.h
 	$(RM) -r headers
 
 payload:

