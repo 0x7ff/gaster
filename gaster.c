@@ -802,6 +802,21 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			handle_interface_request = 0x10000EEE4;
 			usb_create_string_descriptor = 0x10000E074;
 			usb_serial_number_string_descriptor = 0x18008062A;
+		} else if(strstr(usb_serial_num, " SRTG:[iBoot-2098.0.0.2.4]") != NULL) {
+			cpid = 0x7002;
+			config_hole = 14;
+			config_overwrite_pad = 0x2C0;
+			patch_addr = 0x3DEC;
+			memcpy_addr = 0x89F4;
+			aes_crypto_cmd = 0x6341;
+			gUSBSerialNumber = 0x46005958;
+			dfu_handle_request = 0x46005898;
+			payload_dest_armv7 = 0x46007800;
+			usb_core_do_transfer = 0x6E59;
+			insecure_memory_base = 0x46018000;
+			handle_interface_request = 0x7081;
+			usb_create_string_descriptor = 0x6745;
+			usb_serial_number_string_descriptor = 0x4600034A;
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-2234.0.0.2.22]") != NULL) {
 			cpid = 0x8003;
 			patch_addr = 0x10000812C;
@@ -1751,7 +1766,7 @@ gaster_aes(usb_handle_t *handle, uint32_t cmd, const uint8_t *src, uint8_t *dst,
 	size_t data_sz;
 	uint64_t r;
 
-	if(cpid == 0x8960 || cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
+	if(cpid == 0x8960 || cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8000 || cpid == 0x8003 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
 		exec_cmd.magic = EXEC_MAGIC;
 		exec_cmd.func = aes_crypto_cmd;
 		exec_cmd.x[0] = cmd;
