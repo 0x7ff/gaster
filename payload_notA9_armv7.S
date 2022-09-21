@@ -60,9 +60,9 @@ _find_zero_loop:
 	blx r1
 	ldr r1, =usb_serial_number_string_descriptor
 	strb r0, [r1]
-	movw r2, #0x2000
+	mov r2, #0x20
 	ldr r3, =patch_addr
-	str r2, [r3]
+	strh r2, [r3]
 	pop {pc}
 
 PWND_STR:
