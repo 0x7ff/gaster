@@ -803,7 +803,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			usb_serial_number_string_descriptor = 0x18008062A;
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-2098.0.0.2.4]") != NULL) {
 			cpid = 0x7002;
-			config_hole = 16;
+			config_hole = 64;
 			config_overwrite_pad = 0x300;
 			patch_addr = 0x40003DEC;
 			memcpy_addr = 0x89F4;
@@ -1470,7 +1470,7 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 					overwrite_sz = sizeof(checkm8_overwrite_armv7);
 				}
 			}
-			if(overwrite != NULL && send_usb_control_request(handle, 0, 0, 0, 0, overwrite, overwrite_sz, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_STALL && ((cpid != 0x8960 && cpid != 0x8001 && cpid != 0x8010 && cpid != 0x8011 && cpid != 0x8012 && cpid != 0x8015) || send_usb_control_request_no_data(handle, 0x21, DFU_DNLOAD, 0, 0, EP0_MAX_PACKET_SZ, NULL))) {
+			if(overwrite != NULL && send_usb_control_request(handle, 0, 0, 0, 0, overwrite, overwrite_sz, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_STALL && send_usb_control_request_no_data(handle, 0x21, DFU_DNLOAD, 0, 0, EP0_MAX_PACKET_SZ, NULL)) {
 				ret = true;
 				if(cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8000 || cpid == 0x8003) {
 					send_usb_control_request_no_data(handle, 0x21, DFU_CLR_STATUS, 0, 0, 0, NULL);
