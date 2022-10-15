@@ -1478,7 +1478,7 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 					send_usb_control_request_no_data(handle, 0x21, DFU_CLR_STATUS, 0, 0, 0, NULL);
 				} else {
 					for(i = 0; ret && i < data_sz; i += packet_sz) {
-						packet_sz = MIN(data_sz - i, 3 * EP0_MAX_PACKET_SZ + 1);
+						packet_sz = MIN(data_sz - i, DFU_MAX_TRANSFER_SZ);
 						ret = send_usb_control_request(handle, 0x21, DFU_DNLOAD, 0, 0, &data[i], packet_sz, NULL);
 					}
 					if(ret) {
