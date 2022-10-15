@@ -547,14 +547,13 @@ lzfse_decode_buffer_with_scratch(uint8_t *dst_buffer, size_t dst_size, const uin
 size_t
 lzfse_decode_buffer(uint8_t *dst_buffer, size_t dst_size, const uint8_t *src_buffer, size_t src_size, void *scratch_buffer) {
 	bool has_malloc = false;
-	size_t ret = 0;
+	size_t ret;
 
 	if(scratch_buffer == NULL) {
-		scratch_buffer = malloc(lzfse_decode_scratch_size());
+		if((scratch_buffer = malloc(lzfse_decode_scratch_size())) == NULL) {
+			return 0;
+		}
 		has_malloc = true;
-	}
-	if(scratch_buffer == NULL) {
-		return 0;
 	}
 	ret = lzfse_decode_buffer_with_scratch(dst_buffer, dst_size, src_buffer, src_size, scratch_buffer);
 	if(has_malloc) {

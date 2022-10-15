@@ -76,4 +76,4 @@ _find_zero_loop:
 	pop {pc}
 
 PWND_STR:
-.asciz " PWND:[gaster]"
+.asciz " PWND:[checkm8]"
