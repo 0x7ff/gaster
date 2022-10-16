@@ -24,9 +24,6 @@
 .set gUSBSerialNumber,                    0x7FFFFF5
 .set usb_create_string_descriptor,        0x7FFFFF6
 .set usb_serial_number_string_descriptor, 0x7FFFFF7
-.set patch_addr,                          0x7FFFFF8
-.set ttb_vrom_addr,                       0x7FFFFF9
-.set ttb_rom_addr,                        0x7FFFFFA
 
 .arm
 .global _main
@@ -62,17 +59,6 @@ _find_zero_loop:
 	blx r1
 	ldr r1, =usb_serial_number_string_descriptor
 	strb r0, [r1]
-	ldr r0, =ttb_vrom_addr
-	ldr r1, [r0]
-	ldr r0, =ttb_rom_addr
-	str r1, [r0]
-	mov r0, #0
-	mcr p15, 0, r0, c8, c7, 0
-	dsb sy
-	isb
-	mov r0, #0x2000
-	ldr r1, =patch_addr
-	strh r0, [r1]
 	pop {pc}
 
 PWND_STR:
