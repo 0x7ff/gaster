@@ -1194,7 +1194,7 @@ dfu_send_data(const usb_handle_t *handle, uint8_t *data, size_t len) {
 }
 
 static bool
-recovery_send_data(const usb_handle_t *handle, uint8_t *data, size_t len, char *command) {
+recovery_send_data(const usb_handle_t *handle, uint8_t *data, size_t len) {
 	transfer_ret_t transfer_ret;
 	size_t i, packet_sz;
 
@@ -1205,9 +1205,16 @@ recovery_send_data(const usb_handle_t *handle, uint8_t *data, size_t len, char *
 				return false;
 			}
 		}
-		return send_usb_control_request(handle, 0x40, 1, 0, 0, command, strlen(command) + 1, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_OK && transfer_ret.sz == strlen(command) + 1;
+		return true;
 	}
 	return false;
+}
+
+static bool
+recovery_send_data_and_command(const usb_handle_t *handle, uint8_t *data, size_t len, char *command) {
+	transfer_ret_t transfer_ret;
+
+	return recovery_send_data(handle, data, len) && send_usb_control_request(handle, 0x40, 1, 0, 0, command, strlen(command) + 1, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_OK && transfer_ret.sz == strlen(command) + 1;
 }
 
 static bool
@@ -1901,7 +1908,11 @@ gaster_load(usb_handle_t *handle, uint8_t *ibss, size_t ibss_len, uint8_t *ibec,
 				ret = false;
 				init_usb_handle(handle, APPLE_VID, RECOVERY_MODE_PID);
 				if(wait_usb_handle(handle, 0, 0, NULL, NULL)) {
-					ret = recovery_send_data(handle, ibec, ibec_len, "go");
+					if(cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
+						ret = recovery_send_data_and_command(handle, ibec, ibec_len, "go");
+					} else {
+						ret = recovery_send_data(handle, ibec, ibec_len);
+					}
 					reset_usb_handle(handle);
 					close_usb_handle(handle);
 				}
