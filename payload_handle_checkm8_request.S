@@ -20,7 +20,9 @@
 .set insecure_memory_base,     0x7FFFFFF1
 .set exec_magic,               0x7FFFFFF2
 .set done_magic,               0x7FFFFFF3
-.set usb_core_do_transfer,     0x7FFFFFF4
+.set memc_magic,               0x7FFFFFF4
+.set memcpy_addr,              0x7FFFFFF5
+.set usb_core_do_transfer,     0x7FFFFFF6
 
 .global _main
 _main:
@@ -41,15 +43,26 @@ _main:
 	ldr x0, [x20]
 	ldr x1, =exec_magic
 	cmp x0, x1
-	bne _request_done
+	bne _not_exec
 	str xzr, [x20]
 	ldp x0, x1, [x20, #0x10]
 	ldp x2, x3, [x20, #0x20]
 	ldp x4, x5, [x20, #0x30]
-	ldr x6, [x20, #0x40]
-	ldr x7, [x20, #0x48]
+	ldp x6, x7, [x20, #0x40]
 	ldr x8, [x20, #0x8]
 	blr x8
+	ldr x8, =done_magic
+	stp x8, x0, [x20]
+	b _request_done
+_not_exec:
+	ldr x1, =memc_magic
+	cmp x0, x1
+	bne _request_done
+	str xzr, [x20]
+	ldp x0, x1, [x20, #0x10]
+	ldr x2, [x20, #0x20]
+	ldr x3, =memcpy_addr
+	blr x3
 	ldr x8, =done_magic
 	stp x8, x0, [x20]
 _request_done:

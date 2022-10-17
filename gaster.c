@@ -56,6 +56,7 @@
 #define DFU_STATE_MANIFEST_WAIT_RESET (8)
 #define DONE_MAGIC (0x646F6E65646F6E65ULL)
 #define EXEC_MAGIC (0x6578656365786563ULL)
+#define MEMC_MAGIC (0x6D656D636D656D63ULL)
 #define USB_MAX_STRING_DESCRIPTOR_IDX (10)
 
 #define LZSS_F (18)
@@ -1239,10 +1240,10 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 		uint32_t pwnd[4], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor;
 	} notA9_armv7;
 	struct {
-		uint64_t handle_interface_request, insecure_memory_base, exec_magic, done_magic, usb_core_do_transfer;
+		uint64_t handle_interface_request, insecure_memory_base, exec_magic, done_magic, memc_magic, memcpy_addr, usb_core_do_transfer;
 	} handle_checkm8_request;
 	struct {
-		uint32_t handle_interface_request, insecure_memory_base, exec_magic, done_magic, usb_core_do_transfer;
+		uint32_t handle_interface_request, insecure_memory_base, exec_magic, done_magic, memc_magic, memcpy_addr, usb_core_do_transfer;
 	} handle_checkm8_request_armv7;
 	callback_t callbacks[] = {
 		{ write_ttbr0, insecure_memory_base },
@@ -1349,6 +1350,8 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 				handle_checkm8_request.insecure_memory_base = insecure_memory_base;
 				handle_checkm8_request.exec_magic = EXEC_MAGIC;
 				handle_checkm8_request.done_magic = DONE_MAGIC;
+				handle_checkm8_request.memc_magic = MEMC_MAGIC;
+				handle_checkm8_request.memcpy_addr = memcpy_addr;
 				handle_checkm8_request.usb_core_do_transfer = usb_core_do_transfer;
 				memcpy(data + data_sz, &handle_checkm8_request, sizeof(handle_checkm8_request));
 				data_sz += sizeof(handle_checkm8_request);
@@ -1375,6 +1378,8 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 				handle_checkm8_request.insecure_memory_base = insecure_memory_base;
 				handle_checkm8_request.exec_magic = EXEC_MAGIC;
 				handle_checkm8_request.done_magic = DONE_MAGIC;
+				handle_checkm8_request.memc_magic = MEMC_MAGIC;
+				handle_checkm8_request.memcpy_addr = memcpy_addr;
 				handle_checkm8_request.usb_core_do_transfer = usb_core_do_transfer;
 				memcpy(data + data_sz, &handle_checkm8_request, sizeof(handle_checkm8_request));
 				data_sz += sizeof(handle_checkm8_request);
@@ -1397,6 +1402,8 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 				handle_checkm8_request_armv7.insecure_memory_base = (uint32_t)insecure_memory_base;
 				handle_checkm8_request_armv7.exec_magic = (uint32_t)EXEC_MAGIC;
 				handle_checkm8_request_armv7.done_magic = (uint32_t)DONE_MAGIC;
+				handle_checkm8_request_armv7.memc_magic = (uint32_t)MEMC_MAGIC;
+				handle_checkm8_request_armv7.memcpy_addr = (uint32_t)memcpy_addr;
 				handle_checkm8_request_armv7.usb_core_do_transfer = (uint32_t)usb_core_do_transfer;
 				memcpy(data + data_sz, &handle_checkm8_request_armv7, sizeof(handle_checkm8_request_armv7));
 				data_sz += sizeof(handle_checkm8_request_armv7);
@@ -1739,11 +1746,11 @@ static bool
 gaster_aes(usb_handle_t *handle, uint32_t cmd, const uint8_t *src, uint8_t *dst, size_t len, uint32_t options) {
 	uint8_t data[DFU_MAX_TRANSFER_SZ], *response;
 	struct {
+		uint32_t magic_0, magic_1, func, pad, r[8];
+	} exec_cmd_armv7;
+	struct {
 		uint64_t magic, func, x[8];
 	} exec_cmd;
-	struct {
-		uint32_t magic, func, r[8];
-	} exec_cmd_armv7;
 	uint32_t r_armv7;
 	size_t data_sz;
 	uint64_t r;
@@ -1778,11 +1785,13 @@ gaster_aes(usb_handle_t *handle, uint32_t cmd, const uint8_t *src, uint8_t *dst,
 			return true;
 		}
 	} else {
-		exec_cmd_armv7.magic = (uint32_t)EXEC_MAGIC;
+		exec_cmd_armv7.magic_0 = (uint32_t)EXEC_MAGIC;
+		exec_cmd_armv7.magic_1 = (uint32_t)EXEC_MAGIC;
 		exec_cmd_armv7.func = (uint32_t)aes_crypto_cmd;
+		exec_cmd_armv7.pad = 0;
 		exec_cmd_armv7.r[0] = cmd;
-		exec_cmd_armv7.r[1] = (uint32_t)(insecure_memory_base + 9 * sizeof(r_armv7));
-		exec_cmd_armv7.r[2] = (uint32_t)(insecure_memory_base + 2 * sizeof(r_armv7));
+		exec_cmd_armv7.r[1] = (uint32_t)(insecure_memory_base + 11 * sizeof(r_armv7));
+		exec_cmd_armv7.r[2] = (uint32_t)(insecure_memory_base + 4 * sizeof(r_armv7));
 		exec_cmd_armv7.r[3] = (uint32_t)len;
 		exec_cmd_armv7.r[4] = options;
 		exec_cmd_armv7.r[5] = 0;
@@ -1791,18 +1800,28 @@ gaster_aes(usb_handle_t *handle, uint32_t cmd, const uint8_t *src, uint8_t *dst,
 		data_sz = sizeof(exec_cmd_armv7) - sizeof(r_armv7);
 		memcpy(data + data_sz, src, len);
 		data_sz += len;
-		if(gaster_command(handle, data, data_sz, &response, len + 2 * sizeof(r_armv7))) {
+		if(gaster_command(handle, data, data_sz, &response, len + 4 * sizeof(r_armv7))) {
 			memcpy(&r_armv7, response, sizeof(r_armv7));
 			if(r_armv7 != (uint32_t)DONE_MAGIC) {
 				free(response);
 				return false;
 			}
 			memcpy(&r_armv7, response + sizeof(r_armv7), sizeof(r_armv7));
+			if(r_armv7 != (uint32_t)DONE_MAGIC) {
+				free(response);
+				return false;
+			}
+			memcpy(&r_armv7, response + 2 * sizeof(r_armv7), sizeof(r_armv7));
 			if(r_armv7 != 0) {
 				free(response);
 				return false;
 			}
-			memcpy(dst, response + 2 * sizeof(r_armv7), len);
+			memcpy(&r_armv7, response + 3 * sizeof(r_armv7), sizeof(r_armv7));
+			if(r_armv7 != 0) {
+				free(response);
+				return false;
+			}
+			memcpy(dst, response + 4 * sizeof(r_armv7), len);
 			free(response);
 			return true;
 		}
