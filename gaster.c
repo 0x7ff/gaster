@@ -46,13 +46,11 @@
 #define TASK_MAGIC_1 (0x74736B32)
 #define AES_KEY_SZ_BYTES_256 (32)
 #define AES_KEY_TYPE_GID0 (0x200U)
-#define RECOVERY_MODE_PID (0x1281)
 #define DFU_MAX_TRANSFER_SZ (0x800)
 #define DFU_STATE_MANIFEST_SYNC (6)
 #define AES_KEY_SZ_256 (0x20000000U)
 #define ARM_16K_TT_L2_SZ (0x2000000U)
 #define TASK_STACK_MAGIC (0x7374616B)
-#define RECOVERY_MAX_TRANSFER_SZ (0x8000)
 #define DFU_STATE_MANIFEST_WAIT_RESET (8)
 #define DONE_MAGIC (0x646F6E65646F6E65ULL)
 #define EXEC_MAGIC (0x6578656365786563ULL)
@@ -209,7 +207,9 @@ static enum {
 	STAGE_PWNED
 } stage;
 static uint16_t cpid;
+#ifndef HAVE_LIBUSB
 static bool manual_reset;
+#endif
 static unsigned usb_timeout;
 static uint32_t payload_dest_armv7;
 static const char *pwnd_str = " PWND:[checkm8]";
@@ -348,23 +348,6 @@ send_usb_control_request_async(const usb_handle_t *handle, uint8_t bm_request_ty
 		libusb_free_transfer(transfer);
 	}
 	return completed != 0;
-}
-
-static bool
-send_usb_bulk_request(const usb_handle_t *handle, uint8_t endpoint, void *p_data, size_t len, transfer_ret_t *transfer_ret) {
-	int transfer_sz, ret = libusb_bulk_transfer(handle->device, endpoint, p_data, (int)len, &transfer_sz, usb_timeout);
-
-	if(transfer_ret != NULL) {
-		if(ret == LIBUSB_SUCCESS) {
-			transfer_ret->sz = (uint32_t)transfer_sz;
-			transfer_ret->ret = USB_TRANSFER_OK;
-		} else if(ret == LIBUSB_ERROR_PIPE) {
-			transfer_ret->ret = USB_TRANSFER_STALL;
-		} else {
-			transfer_ret->ret = USB_TRANSFER_ERROR;
-		}
-	}
-	return true;
 }
 
 static void
@@ -618,33 +601,6 @@ send_usb_control_request_async(const usb_handle_t *handle, uint8_t bm_request_ty
 			CFRunLoopRun();
 			return true;
 		}
-	}
-	return false;
-}
-
-static bool
-send_usb_bulk_request(const usb_handle_t *handle, uint8_t endpoint, void *p_data, size_t len, transfer_ret_t *transfer_ret) {
-	UInt32 out_sz;
-	IOReturn ret;
-
-	if((*handle->interface)->GetPipeStatus(handle->interface, 1) == kIOReturnSuccess) {
-		out_sz = (uint32_t)len;
-		if((endpoint & kUSBbEndpointDirectionMask) == kUSBEndpointDirectionIn) {
-			ret = (*handle->interface)->ReadPipeTO(handle->interface, 1, p_data, &out_sz, usb_timeout, usb_timeout);
-		} else {
-			ret = (*handle->interface)->WritePipeTO(handle->interface, 1, p_data, out_sz, usb_timeout, usb_timeout);
-		}
-		if(transfer_ret != NULL) {
-			if(ret == kIOReturnSuccess) {
-				transfer_ret->sz = out_sz;
-				transfer_ret->ret = USB_TRANSFER_OK;
-			} else if(ret == kUSBPipeStalled) {
-				transfer_ret->ret = USB_TRANSFER_STALL;
-			} else {
-				transfer_ret->ret = USB_TRANSFER_ERROR;
-			}
-		}
-		return true;
 	}
 	return false;
 }
@@ -1194,30 +1150,6 @@ dfu_send_data(const usb_handle_t *handle, uint8_t *data, size_t len) {
 }
 
 static bool
-recovery_send_data(const usb_handle_t *handle, uint8_t *data, size_t len) {
-	transfer_ret_t transfer_ret;
-	size_t i, packet_sz;
-
-	if(send_usb_control_request_no_data(handle, 0x41, 0, 0, 0, 0, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_OK && transfer_ret.sz == 0) {
-		for(i = 0; i < len; i += packet_sz) {
-			packet_sz = MIN(len - i, RECOVERY_MAX_TRANSFER_SZ);
-			if(!send_usb_bulk_request(handle, 4, &data[i], packet_sz, &transfer_ret) || transfer_ret.ret != USB_TRANSFER_OK || transfer_ret.sz != packet_sz) {
-				return false;
-			}
-		}
-		return true;
-	}
-	return false;
-}
-
-static bool
-recovery_send_data_and_command(const usb_handle_t *handle, uint8_t *data, size_t len, char *command) {
-	transfer_ret_t transfer_ret;
-
-	return recovery_send_data(handle, data, len) && send_usb_control_request(handle, 0x40, 1, 0, 0, command, strlen(command) + 1, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_OK && transfer_ret.sz == strlen(command) + 1;
-}
-
-static bool
 read_binary_file(const char *filename, uint8_t **buf, size_t *len) {
 	FILE *fp = fopen(filename, "rb");
 	bool ret = false;
@@ -1751,10 +1683,10 @@ gaster_command(usb_handle_t *handle, void *request_data, size_t request_len, uin
 
 static bool
 gaster_aes(usb_handle_t *handle, uint32_t cmd, const uint8_t *src, uint8_t *dst, size_t len, uint32_t options) {
-	uint8_t data[DFU_MAX_TRANSFER_SZ], *response;
 	struct {
 		uint32_t magic_0, magic_1, func, pad, r[8];
 	} exec_cmd_armv7;
+	uint8_t data[DFU_MAX_TRANSFER_SZ], *response;
 	struct {
 		uint64_t magic, func, x[8];
 	} exec_cmd;
@@ -1776,21 +1708,6 @@ gaster_aes(usb_handle_t *handle, uint32_t cmd, const uint8_t *src, uint8_t *dst,
 		data_sz = sizeof(exec_cmd) - sizeof(r);
 		memcpy(data + data_sz, src, len);
 		data_sz += len;
-		if(gaster_command(handle, data, data_sz, &response, len + 2 * sizeof(r))) {
-			memcpy(&r, response, sizeof(r));
-			if(r != DONE_MAGIC) {
-				free(response);
-				return false;
-			}
-			memcpy(&r, response + sizeof(r), sizeof(r));
-			if((uint32_t)r != 0) {
-				free(response);
-				return false;
-			}
-			memcpy(dst, response + 2 * sizeof(r), len);
-			free(response);
-			return true;
-		}
 	} else {
 		exec_cmd_armv7.magic_0 = (uint32_t)EXEC_MAGIC;
 		exec_cmd_armv7.magic_1 = (uint32_t)EXEC_MAGIC;
@@ -1807,31 +1724,21 @@ gaster_aes(usb_handle_t *handle, uint32_t cmd, const uint8_t *src, uint8_t *dst,
 		data_sz = sizeof(exec_cmd_armv7) - sizeof(r_armv7);
 		memcpy(data + data_sz, src, len);
 		data_sz += len;
-		if(gaster_command(handle, data, data_sz, &response, len + 4 * sizeof(r_armv7))) {
-			memcpy(&r_armv7, response, sizeof(r_armv7));
-			if(r_armv7 != (uint32_t)DONE_MAGIC) {
-				free(response);
-				return false;
-			}
-			memcpy(&r_armv7, response + sizeof(r_armv7), sizeof(r_armv7));
-			if(r_armv7 != (uint32_t)DONE_MAGIC) {
-				free(response);
-				return false;
-			}
-			memcpy(&r_armv7, response + 2 * sizeof(r_armv7), sizeof(r_armv7));
-			if(r_armv7 != 0) {
-				free(response);
-				return false;
-			}
-			memcpy(&r_armv7, response + 3 * sizeof(r_armv7), sizeof(r_armv7));
-			if(r_armv7 != 0) {
-				free(response);
-				return false;
-			}
-			memcpy(dst, response + 4 * sizeof(r_armv7), len);
+	}
+	if(gaster_command(handle, data, data_sz, &response, len + 2 * sizeof(r))) {
+		memcpy(&r, response, sizeof(r));
+		if(r != DONE_MAGIC) {
 			free(response);
-			return true;
+			return false;
 		}
+		memcpy(&r, response + sizeof(r), sizeof(r));
+		if((uint32_t)r != 0) {
+			free(response);
+			return false;
+		}
+		memcpy(dst, response + 2 * sizeof(r), len);
+		free(response);
+		return true;
 	}
 	return false;
 }
@@ -1893,49 +1800,14 @@ gaster_decrypt_file(usb_handle_t *handle, const char *src_filename, const char *
 }
 
 static bool
-gaster_load(usb_handle_t *handle, uint8_t *ibss, size_t ibss_len, uint8_t *ibec, size_t ibec_len) {
-	bool ret = false;
-
+gaster_reset(usb_handle_t *handle) {
 	if(wait_usb_handle(handle, 0, 0, NULL, NULL)) {
 		send_usb_control_request_no_data(handle, 0x21, DFU_CLR_STATUS, 0, 0, 0, NULL);
 		reset_usb_handle(handle);
 		close_usb_handle(handle);
-		if(wait_usb_handle(handle, 0, 0, NULL, NULL)) {
-			ret = dfu_send_data(handle, ibss, ibss_len);
-			reset_usb_handle(handle);
-			close_usb_handle(handle);
-			if(ret) {
-				ret = false;
-				init_usb_handle(handle, APPLE_VID, RECOVERY_MODE_PID);
-				if(wait_usb_handle(handle, 0, 0, NULL, NULL)) {
-					if(cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
-						ret = recovery_send_data_and_command(handle, ibec, ibec_len, "go");
-					} else {
-						ret = recovery_send_data(handle, ibec, ibec_len);
-					}
-					reset_usb_handle(handle);
-					close_usb_handle(handle);
-				}
-			}
-		}
+		return true;
 	}
-	return ret;
-}
-
-static bool
-gaster_load_file(usb_handle_t *handle, const char *ibss_filename, const char *ibec_filename) {
-	size_t ibss_len, ibec_len;
-	uint8_t *ibss, *ibec;
-	bool ret = false;
-
-	if(read_binary_file(ibss_filename, &ibss, &ibss_len)) {
-		if(read_binary_file(ibec_filename, &ibec, &ibec_len)) {
-			ret = gaster_checkm8(handle) && gaster_load(handle, ibss, ibss_len, ibec, ibec_len);
-			free(ibec);
-		}
-		free(ibss);
-	}
-	return ret;
+	return false;
 }
 
 int
@@ -1948,13 +1820,15 @@ main(int argc, char **argv) {
 		usb_timeout = 10;
 	}
 	printf("usb_timeout: %u\n", usb_timeout);
+#ifndef HAVE_LIBUSB
 	manual_reset = getenv("MANUAL_RESET") != NULL;
-	if(argc == 2 && strcmp(argv[1], "pwn") == 0) {
-		if(gaster_checkm8(&handle)) {
+#endif
+	if(argc == 2 && strcmp(argv[1], "reset") == 0) {
+		if(gaster_reset(&handle)) {
 			ret = 0;
 		}
-	} else if(argc == 4 && strcmp(argv[1], "load") == 0) {
-		if(gaster_load_file(&handle, argv[2], argv[3])) {
+	} else if(argc == 2 && strcmp(argv[1], "pwn") == 0) {
+		if(gaster_checkm8(&handle)) {
 			ret = 0;
 		}
 	} else if(argc == 4 && strcmp(argv[1], "decrypt") == 0) {
@@ -1969,10 +1843,12 @@ main(int argc, char **argv) {
 		printf("Usage: env %s options\n", argv[0]);
 		puts("env:");
 		puts("USB_TIMEOUT - USB timeout in ms");
+#ifndef HAVE_LIBUSB
 		puts("MANUAL_RESET - Manually reset the device");
+#endif
 		puts("options:");
+		puts("reset - Reset DFU counters");
 		puts("pwn - Put the device in pwned DFU mode");
-		puts("load iBSS iBEC - Load the untrusted boot chain");
 		puts("decrypt src dst - Decrypt file using GID0 AES key");
 		puts("decrypt_kbag kbag - Decrypt KBAG using GID0 AES key");
 	}
