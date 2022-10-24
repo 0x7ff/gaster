@@ -262,13 +262,11 @@ reset_usb_handle(const usb_handle_t *handle) {
 
 static bool
 wait_usb_handle(usb_handle_t *handle, uint8_t usb_interface, uint8_t usb_alt_interface, usb_check_cb_t usb_check_cb, void *arg) {
-	int config;
-
 	if(libusb_init(&handle->context) == LIBUSB_SUCCESS) {
 		printf("[libusb] Waiting for the USB handle with VID: 0x%" PRIX16 ", PID: 0x%" PRIX16 "\n", handle->vid, handle->pid);
 		for(;;) {
 			if((handle->device = libusb_open_device_with_vid_pid(handle->context, handle->vid, handle->pid)) != NULL) {
-				if(libusb_get_configuration(handle->device, &config) == LIBUSB_SUCCESS && libusb_set_configuration(handle->device, config) == LIBUSB_SUCCESS && libusb_claim_interface(handle->device, usb_interface) == LIBUSB_SUCCESS) {
+				if(libusb_set_configuration(handle->device, 1) == LIBUSB_SUCCESS && libusb_claim_interface(handle->device, usb_interface) == LIBUSB_SUCCESS) {
 					if((usb_alt_interface != 1 || libusb_set_interface_alt_setting(handle->device, usb_interface, usb_alt_interface) == LIBUSB_SUCCESS) && (usb_check_cb == NULL || usb_check_cb(handle, arg))) {
 						handle->usb_interface = usb_interface;
 						puts("Found the USB handle.");
@@ -404,12 +402,11 @@ close_usb_handle(usb_handle_t *handle) {
 
 static bool
 open_usb_device(io_service_t serv, usb_handle_t *handle) {
-	IOUSBConfigurationDescriptorPtr config;
 	bool ret = false;
 
 	if(query_usb_interface(serv, kIOUSBDeviceUserClientTypeID, kIOUSBDeviceInterfaceID320, (LPVOID *)&handle->device)) {
 		if((*handle->device)->USBDeviceOpen(handle->device) == kIOReturnSuccess) {
-			if((*handle->device)->GetConfigurationDescriptorPtr(handle->device, 0, &config) == kIOReturnSuccess && (*handle->device)->SetConfiguration(handle->device, config->bConfigurationValue) == kIOReturnSuccess && (*handle->device)->CreateDeviceAsyncEventSource(handle->device, &handle->async_event_source) == kIOReturnSuccess) {
+			if((*handle->device)->SetConfiguration(handle->device, 1) == kIOReturnSuccess && (*handle->device)->CreateDeviceAsyncEventSource(handle->device, &handle->async_event_source) == kIOReturnSuccess) {
 				CFRunLoopAddSource(CFRunLoopGetCurrent(), handle->async_event_source, kCFRunLoopDefaultMode);
 				handle->serv = serv;
 				ret = true;
@@ -1801,6 +1798,7 @@ gaster_decrypt_file(usb_handle_t *handle, const char *src_filename, const char *
 
 static bool
 gaster_reset(usb_handle_t *handle) {
+	init_usb_handle(handle, APPLE_VID, DFU_MODE_PID);
 	if(wait_usb_handle(handle, 0, 0, NULL, NULL)) {
 		send_usb_control_request_no_data(handle, 0x21, DFU_CLR_STATUS, 0, 0, 0, NULL);
 		reset_usb_handle(handle);
@@ -1817,7 +1815,7 @@ main(int argc, char **argv) {
 	usb_handle_t handle;
 
 	if(env_usb_timeout == NULL || sscanf(env_usb_timeout, "%u", &usb_timeout) != 1) {
-		usb_timeout = 10;
+		usb_timeout = 5;
 	}
 	printf("usb_timeout: %u\n", usb_timeout);
 #ifndef HAVE_LIBUSB
