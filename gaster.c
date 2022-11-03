@@ -1404,6 +1404,7 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 						ret = send_usb_control_request(handle, 0x21, DFU_DNLOAD, 0, 0, &data[i], packet_sz, NULL);
 					}
 					if(ret) {
+						dfu_set_state_wait_reset(handle);
 						dfu_check_status(handle, DFU_STATUS_OK, DFU_STATE_MANIFEST_SYNC);
 						dfu_check_status(handle, DFU_STATUS_OK, DFU_STATE_MANIFEST);
 						dfu_check_status(handle, DFU_STATUS_OK, DFU_STATE_MANIFEST_WAIT_RESET);
