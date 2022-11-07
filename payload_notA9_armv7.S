@@ -24,6 +24,7 @@
 .set gUSBSerialNumber,                    0x7FFFFF5
 .set usb_create_string_descriptor,        0x7FFFFF6
 .set usb_serial_number_string_descriptor, 0x7FFFFF7
+.set total_received,                      0x7FFFFF8
 
 .arm
 .global _main
@@ -59,6 +60,9 @@ _find_zero_loop:
 	blx r1
 	ldr r1, =usb_serial_number_string_descriptor
 	strb r0, [r1]
+	mov r0, #0
+	ldr r1, =total_received
+	str r0, [r1]
 	pop {pc}
 
 PWND_STR:

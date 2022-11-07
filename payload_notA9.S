@@ -25,6 +25,7 @@
 .set usb_create_string_descriptor,        0x7FFFFFF6
 .set usb_serial_number_string_descriptor, 0x7FFFFFF7
 .set patch_addr,                          0x7FFFFFF8
+.set total_received,                      0x7FFFFFF9
 
 .global _main
 _main:
@@ -52,9 +53,11 @@ _find_zero_loop:
 	blr x1
 	ldr x1, =usb_serial_number_string_descriptor
 	strb w0, [x1]
-	mov w2, #0xD2800000
-	ldr x3, =patch_addr
-	str w2, [x3]
+	mov w0, #0xD2800000
+	ldr x1, =patch_addr
+	str w0, [x1]
+	ldr x0, =total_received
+	str wzr, [x0]
 	ldp x29, x30, [sp], #0x10
 	ret
 

@@ -26,6 +26,7 @@
 .set usb_serial_number_string_descriptor, 0x7FFFFFF7
 .set ttbr0_vrom_addr,                     0x7FFFFFF8
 .set patch_addr,                          0x7FFFFFF9
+.set total_received,                      0x7FFFFFFA
 
 .global _main
 _main:
@@ -70,6 +71,8 @@ _find_zero_loop:
 	tlbi alle3
 	dsb sy
 	isb
+	ldr x0, =total_received
+	str wzr, [x0]
 	ldp x29, x30, [sp], #0x10
 	ret
 
