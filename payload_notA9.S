@@ -17,23 +17,25 @@
 
 .pool
 .set payload_dest,                        0x7FFFFFF0
-.set dfu_handle_request,                  0x7FFFFFF1
-.set payload_off,                         0x7FFFFFF2
-.set payload_sz,                          0x7FFFFFF3
-.set memcpy_addr,                         0x7FFFFFF4
-.set gUSBSerialNumber,                    0x7FFFFFF5
-.set usb_create_string_descriptor,        0x7FFFFFF6
-.set usb_serial_number_string_descriptor, 0x7FFFFFF7
-.set patch_addr,                          0x7FFFFFF8
-.set total_received,                      0x7FFFFFF9
+.set dfu_handle_bus_reset,                0x7FFFFFF1
+.set dfu_handle_request,                  0x7FFFFFF2
+.set payload_off,                         0x7FFFFFF3
+.set payload_sz,                          0x7FFFFFF4
+.set memcpy_addr,                         0x7FFFFFF5
+.set gUSBSerialNumber,                    0x7FFFFFF6
+.set usb_create_string_descriptor,        0x7FFFFFF7
+.set usb_serial_number_string_descriptor, 0x7FFFFFF8
+.set patch_addr,                          0x7FFFFFF9
 
 .global _main
 _main:
 	stp x29, x30, [sp, #-0x10]!
 	ldr x0, =payload_dest
-	ldr x3, =dfu_handle_request
+	ldr x2, =dfu_handle_bus_reset
+	str xzr, [x2]
+	ldr x2, =dfu_handle_request
 	add x1, x0, #0xC
-	str x1, [x3]
+	str x1, [x2]
 	adr x1, _main
 	ldr x2, =payload_off
 	add x1, x1, x2
@@ -56,8 +58,6 @@ _find_zero_loop:
 	mov w0, #0xD2800000
 	ldr x1, =patch_addr
 	str w0, [x1]
-	ldr x0, =total_received
-	str wzr, [x0]
 	ldp x29, x30, [sp], #0x10
 	ret
 
